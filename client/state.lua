@@ -562,8 +562,8 @@ end
 ---@param entity? number A NETWORKED entity (a real ped/vehicle/player -- NOT QB.entities.create output, which has no server-side twin) to distance-check against. Omit for an action with nothing to validate a distance against.
 ---@param maxDistance? number Overrides Config.target.serverActionMaxDistance.
 ---@param ... any Extra arguments forwarded to the server-side handler.
----@return boolean ok `false` if the callback itself failed (timeout/handshake failure) or the handler rejected/errored.
----@return any resultOrError The handler's return value on success, or an error message string on failure.
+---@return boolean? ok `nil` if the callback itself failed (timeout/handshake failure -- check qblib's own console). Otherwise `true`/`false` reflecting the server action's own outcome (unknown action name, missing/too-far entity, the handler erroring, or the handler's own deliberate `return false, reason`).
+---@return any ... The handler's own remaining return values on success (`ok == true`), or the failure reason string (`ok == false`). Nothing at all when `ok` is `nil`.
 function Target.runServerAction(name, entity, maxDistance, ...)
     assert(type(name) == "string" and #name > 0, "runServerAction requires a name.")
 
@@ -576,19 +576,8 @@ function Target.runServerAction(name, entity, maxDistance, ...)
         netId = NetworkGetNetworkIdFromEntity(entity)
     end
 
-    -- QB.callback.trigger's own wire protocol only carries a single result
-    -- value, which is why the server handler replies with one envelope table
-    -- (see server/server.lua) rather than (ok, error) as two values -- a nil
-    -- envelope means the callback itself failed (timeout, handshake failure).
-    local envelope = QB.callback.trigger("qbtarget:server:runAction", name, netId, maxDistance, ...)
-    if envelope == nil then return false, "qbtarget:server:runAction callback failed (timeout or handshake failure)." end
-
-    -- Not `envelope.ok and envelope.result or envelope.error` -- that idiom
-    -- silently swaps in envelope.error (nil) whenever a successful handler's
-    -- own result happens to be `false`, which is a legitimate value a server
-    -- action can return.
-    if envelope.ok then
-        return true, envelope.result
-    end
-    return false, envelope.error
+    -- qblib's QB.callback module forwards a handler's return values in full
+    -- (multi-value returns end to end) -- server/server.lua's handler
+    -- replies with (ok, ...) directly, so there's nothing to unpack here.
+    return QB.callback.trigger("qbtarget:server:runAction", name, netId, maxDistance, ...)
 end

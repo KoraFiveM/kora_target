@@ -9,16 +9,16 @@ ServerTarget = ServerTarget or {}
 
 local serverActions = {}
 
--- QB.callback's wire protocol only carries a SINGLE result value end to end
--- (see local/callback/server.lua's `local ok, result = pcall(handler, ...)` --
--- any second return value from a callback handler is silently dropped before
--- it ever reaches the client). So this handler returns one envelope table
--- rather than (ok, error) as two values, and Target.runServerAction on the
--- client unpacks it back into (ok, resultOrError) for its own callers.
+-- qblib's QB.callback module now forwards a handler's return values in full
+-- (multi-value returns end to end), so this replies with (ok, ...) directly
+-- -- true plus the action handler's own return values, or false plus a
+-- reason string -- rather than the hand-rolled envelope table this used to
+-- need before that fix. Target.runServerAction on the client receives these
+-- as real return values with no unpacking of its own required.
 QB.callback.register('qbtarget:server:runAction', function(src, name, netId, maxDistance, ...)
     local handler = serverActions[name]
     if not handler then
-        return { ok = false, error = ('Unknown qbtarget server action: %s'):format(tostring(name)) }
+        return false, ('Unknown qbtarget server action: %s'):format(tostring(name))
     end
 
     local entity = nil
@@ -26,24 +26,26 @@ QB.callback.register('qbtarget:server:runAction', function(src, name, netId, max
     if netId then
         entity = NetworkGetEntityFromNetworkId(netId)
         if not entity or entity == 0 then
-            return { ok = false, error = 'Target entity no longer exists.' }
+            return false, 'Target entity no longer exists.'
         end
 
         local playerPed = GetPlayerPed(src)
         local distance = #(GetEntityCoords(playerPed) - GetEntityCoords(entity))
 
         if distance > (maxDistance or Config.target.serverActionMaxDistance) then
-            return { ok = false, error = 'Too far from target.' }
+            return false, 'Too far from target.'
         end
     end
 
-    local ok, result = pcall(handler, src, entity, ...)
+    local results = table.pack(pcall(handler, src, entity, ...))
+    local ok = results[1]
+
     if not ok then
-        print(('[qbtarget] server action \'%s\' errored: %s'):format(name, tostring(result)))
-        return { ok = false, error = 'Server action errored.' }
+        print(('[qbtarget] server action \'%s\' errored: %s'):format(name, tostring(results[2])))
+        return false, 'Server action errored.'
     end
 
-    return { ok = true, result = result }
+    return true, table.unpack(results, 2, results.n)
 end)
 
 ---Registers a server-side handler runnable via the client's
