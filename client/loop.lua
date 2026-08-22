@@ -226,13 +226,29 @@ local function startTargeting()
     end)
 end
 
-RegisterCommand('+' .. Config.target.keybind.command, function()
-    holding = true
-    startTargeting()
-end, false)
-RegisterCommand('-' .. Config.target.keybind.command, function()
-    holding = false
-end, false)
+-- Two modes over the SAME +/- command pair (so RegisterKeyMapping still binds a
+-- single key either way):
+--   hold   (default): press holds targeting on, release turns it off.
+--   toggle          : press flips targeting on/off; release is ignored, so the
+--                     key can be let go while targeting stays active until the
+--                     next press. `startTargeting`'s `holdingThread` guard means
+--                     a toggle-on while a thread is still winding down is a no-op
+--                     rather than a second loop.
+if Config.target.toggle then
+    RegisterCommand('+' .. Config.target.keybind.command, function()
+        holding = not holding
+        if holding then startTargeting() end
+    end, false)
+    RegisterCommand('-' .. Config.target.keybind.command, function() end, false)
+else
+    RegisterCommand('+' .. Config.target.keybind.command, function()
+        holding = true
+        startTargeting()
+    end, false)
+    RegisterCommand('-' .. Config.target.keybind.command, function()
+        holding = false
+    end, false)
+end
 RegisterKeyMapping('+' .. Config.target.keybind.command, Config.target.keybind.label, 'keyboard', Config.target.keybind.defaultKey)
 
 RegisterCommand(Config.target.selectKeybind.command, function()

@@ -6,6 +6,15 @@ Config.target = {
     -- RegisterCommand, specifically so press vs release can be told apart.
     keybind = { command = 'target', defaultKey = 'LMENU', label = 'Hold to target' },
 
+    -- Toggle vs hold. Default (false) is hold-to-target: targeting runs only
+    -- while the key is physically down, matching qb-target's LMENU feel. Set
+    -- true for press-to-activate / press-again-to-deactivate -- the key press
+    -- flips targeting on, the next press flips it off, and the key can be
+    -- released in between (matching ox_target's default). The +/- command pair
+    -- is registered either way; in toggle mode the release (-target) is ignored
+    -- and only the press flips state. See client/loop.lua.
+    toggle = false,
+
     -- Press this key while a prompt is showing to run its option (or open a
     -- menu, if more than one option is available).
     selectKeybind = { command = 'qbtarget_select', defaultKey = 'E', label = 'Target: select / interact' },
