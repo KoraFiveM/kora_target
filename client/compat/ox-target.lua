@@ -50,6 +50,17 @@ local function translateOxOptions(options)
     local translated = {}
 
     for i, option in ipairs(options) do
+        -- Loud, once-per-option warning at REGISTRATION time (not per
+        -- interaction/frame) for the exact gap the comment above describes:
+        -- groups/items filter fields with no canInteract of the caller's
+        -- own means this option shows to EVERYONE, silently.
+        if (option.groups or option.items) and not option.canInteract then
+            print(('[ox_target-bridge] WARNING: option %q sets groups/items but this compat shim does '
+                .. 'NOT enforce those filters (no ox_core/qb-core in this repo to check against) -- the '
+                .. 'option will be shown to EVERYONE unless you supply your own canInteract.')
+                :format(tostring(option.label)))
+        end
+
         translated[i] = {
             label = option.label,
             icon = option.icon,

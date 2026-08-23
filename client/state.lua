@@ -41,6 +41,24 @@ local function isCallable(x)
     return mt ~= nil and mt.__call ~= nil
 end
 
+-- A "coords-like" value: a table with numeric x/y/z, satisfied by both a
+-- real vector3 and a plain {x=, y=, z=} table (both are accepted throughout
+-- this file). Used to validate addBoxZone/addSphereZone/addPolyZone's
+-- coords/size/points BEFORE handing them to QB.zones.* -- unlike `options`,
+-- these were previously passed through unchecked, so a malformed call only
+-- failed with an opaque error from deep inside qblib.
+local function isCoordsLike(x)
+    -- Deliberately does NOT gate on type(x) == "table" first: FiveM natives
+    -- like GetEntityCoords return vector3 values whose Lua type() is
+    -- "vector3", not "table" (mirrors qblib/modules/zones/client.lua's
+    -- toVec3). pcall guards the field reads so a bare number/nil/boolean
+    -- fails the check instead of erroring on the index.
+    local ok, isNum = pcall(function()
+        return type(x.x) == "number" and type(x.y) == "number" and type(x.z) == "number"
+    end)
+    return ok and isNum
+end
+
 local GLOBAL_TYPES = { ped = true, vehicle = true, object = true, player = true }
 
 ---A bare entity/model/bone value is wrapped as a one-element array; an
@@ -412,6 +430,8 @@ end
 ---@return integer id
 function Target.addBoxZone(zoneOptions)
     assert(type(zoneOptions) == "table", "addBoxZone requires an options table.")
+    assert(isCoordsLike(zoneOptions.coords), "addBoxZone requires zoneOptions.coords to be a table with numeric x/y/z.")
+    assert(isCoordsLike(zoneOptions.size), "addBoxZone requires zoneOptions.size to be a table with numeric x/y/z.")
 
     local options = validateOptions(zoneOptions.options)
     local id = nextId()
@@ -455,6 +475,9 @@ end
 ---@return integer id
 function Target.addSphereZone(zoneOptions)
     assert(type(zoneOptions) == "table", "addSphereZone requires an options table.")
+    assert(isCoordsLike(zoneOptions.coords), "addSphereZone requires zoneOptions.coords to be a table with numeric x/y/z.")
+    assert(type(zoneOptions.radius) == "number" and zoneOptions.radius > 0,
+        "addSphereZone requires zoneOptions.radius to be a positive number.")
 
     local options = validateOptions(zoneOptions.options)
     local id = nextId()
@@ -495,6 +518,9 @@ function Target.addPolyZone(zoneOptions)
     assert(type(zoneOptions) == "table", "addPolyZone requires an options table.")
     assert(type(zoneOptions.points) == "table" and #zoneOptions.points >= 3,
         "addPolyZone requires at least 3 points.")
+    for i, point in ipairs(zoneOptions.points) do
+        assert(isCoordsLike(point), ("addPolyZone requires points[%d] to be a table with numeric x/y/z."):format(i))
+    end
 
     local options = validateOptions(zoneOptions.options)
     local id = nextId()
