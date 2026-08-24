@@ -23,6 +23,11 @@ Target.byGlobalBone = {}   -- id -> {boneNames}
 Target.byZone = {}         -- id -> true, every zone-kind registration id (client/loop.lua tests zoneHandle.contains(hitCoords) against each)
 Target.enabled = true
 Target.hovering = nil      -- maintained by client/loop.lua each tick
+-- Tracks only the qbtarget_debug command's own on/off state (client/loop.lua)
+-- so its no-arg toggle has something local to flip against -- separate from
+-- Config.target.debug, which stays the creation-time default and is never
+-- mutated at runtime.
+Target.debugEnabled = false
 -- Monotonic local generation used by loop.lua to invalidate its aim cache as
 -- soon as a registration changes. This is not exposed as API state.
 Target.registrationRevision = 0
@@ -65,6 +70,30 @@ local function isCoordsLike(x)
         return type(x.x) == "number" and type(x.y) == "number" and type(x.z) == "number"
     end)
     return ok and isNum
+end
+
+-- qblib owns the actual debug shape rendering. Keeping the choice here means
+-- callers can still opt one zone into debugging, while Config.target.debug is
+-- a convenient server-wide override when laying out or diagnosing zones.
+local function zoneDebugEnabled(zoneOptions)
+    return Config.target.debug == true or zoneOptions.debug == true
+end
+
+local function copyCoords(coords)
+    return { x = coords.x, y = coords.y, z = coords.z }
+end
+
+-- A poly has no supplied centre. Its mean vertex position is a stable and
+-- intuitive icon anchor even for concave shapes; it is only a visual hint and
+-- does not participate in the zone's actual containment test.
+local function polySpriteCoords(points)
+    local x, y, z = 0.0, 0.0, 0.0
+    for _, point in ipairs(points) do
+        x, y, z = x + point.x, y + point.y, z + point.z
+    end
+
+    local count = #points
+    return { x = x / count, y = y / count, z = z / count }
 end
 
 local GLOBAL_TYPES = { ped = true, vehicle = true, object = true, player = true }
@@ -436,6 +465,7 @@ end
 ---@field options QBTargetOption[]
 ---@field distance? number
 ---@field debug? boolean
+---@field drawSprite? boolean Set false to hide this zone's configured sprite.
 
 ---@param zoneOptions QBTargetBoxZoneOptions
 ---@return integer id
@@ -458,7 +488,7 @@ function Target.addBoxZone(zoneOptions)
         coords = zoneOptions.coords,
         size = zoneOptions.size,
         rotation = zoneOptions.rotation,
-        debug = zoneOptions.debug,
+        debug = zoneDebugEnabled(zoneOptions),
     })
 
     Target.registrations[id] = {
@@ -467,6 +497,8 @@ function Target.addBoxZone(zoneOptions)
         options = options,
         distance = zoneOptions.distance,
         zoneHandle = zoneHandle,
+        spriteCoords = copyCoords(zoneOptions.coords),
+        drawSprite = zoneOptions.drawSprite ~= false,
     }
     Target.byZone[id] = true
     touchRegistrations()
@@ -481,6 +513,7 @@ end
 ---@field options QBTargetOption[]
 ---@field distance? number
 ---@field debug? boolean
+---@field drawSprite? boolean Set false to hide this zone's configured sprite.
 
 ---@param zoneOptions QBTargetSphereZoneOptions
 ---@return integer id
@@ -497,7 +530,7 @@ function Target.addSphereZone(zoneOptions)
     local zoneHandle = QB.zones.sphere({
         coords = zoneOptions.coords,
         radius = zoneOptions.radius,
-        debug = zoneOptions.debug,
+        debug = zoneDebugEnabled(zoneOptions),
     })
 
     Target.registrations[id] = {
@@ -506,6 +539,8 @@ function Target.addSphereZone(zoneOptions)
         options = options,
         distance = zoneOptions.distance,
         zoneHandle = zoneHandle,
+        spriteCoords = copyCoords(zoneOptions.coords),
+        drawSprite = zoneOptions.drawSprite ~= false,
     }
     Target.byZone[id] = true
     touchRegistrations()
@@ -522,6 +557,7 @@ end
 ---@field options QBTargetOption[]
 ---@field distance? number
 ---@field debug? boolean
+---@field drawSprite? boolean Set false to hide this zone's configured sprite.
 
 ---@param zoneOptions QBTargetPolyZoneOptions
 ---@return integer id
@@ -542,7 +578,7 @@ function Target.addPolyZone(zoneOptions)
         thickness = zoneOptions.thickness,
         minZ = zoneOptions.minZ,
         maxZ = zoneOptions.maxZ,
-        debug = zoneOptions.debug,
+        debug = zoneDebugEnabled(zoneOptions),
     })
 
     Target.registrations[id] = {
@@ -551,6 +587,8 @@ function Target.addPolyZone(zoneOptions)
         options = options,
         distance = zoneOptions.distance,
         zoneHandle = zoneHandle,
+        spriteCoords = polySpriteCoords(zoneOptions.points),
+        drawSprite = zoneOptions.drawSprite ~= false,
     }
     Target.byZone[id] = true
     touchRegistrations()

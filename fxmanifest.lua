@@ -39,6 +39,7 @@ shared_scripts {
 -- their relative order versus loop.lua/exports.lua doesn't matter.
 client_scripts {
     'client/state.lua',
+    'client/sprites.lua',
     'client/loop.lua',
     'client/exports.lua',
     'client/compat/qb-target.lua',

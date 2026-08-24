@@ -43,10 +43,21 @@ Targets **any** entity, of any type, that has a matching bone (e.g. every vehicl
 ### `addTargetBone(entity, bone, options, defaultDistance?)`
 Sugar over `addEntity`: registers `options` on `entity`, forcing every option onto `bone` specifically.
 
-### `addBoxZone({coords, size, rotation?, options, distance?, debug?})`
-### `addSphereZone({coords, radius, options, distance?, debug?})`
-### `addPolyZone({points, thickness?, minZ?, maxZ?, options, distance?, debug?})`
-Zone-based targets, backed by `QB.zones.box/sphere/poly` — no aiming required, just standing inside. Returns the registration `id`.
+### `addBoxZone({coords, size, rotation?, options, distance?, debug?, drawSprite?})`
+### `addSphereZone({coords, radius, options, distance?, debug?, drawSprite?})`
+### `addPolyZone({points, thickness?, minZ?, maxZ?, options, distance?, debug?, drawSprite?})`
+Zone-based targets, backed by `QB.zones.box/sphere/poly` — interact by aiming
+at a point inside the zone; standing inside it is not required. Returns the
+registration `id`.
+
+`Config.target.debug = true` outlines every target zone through qblib, useful
+when placing or diagnosing zones. A zone may also set `debug = true`
+individually. `Config.target.sprites` draws a compact `shared/info` world
+sprite at each coordinate-zone anchor so players can see interactable
+locations before holding Alt; set `drawSprite = false` on one zone to hide its
+icon. The sprite renderer is distance-culled and does not scan entities, so it
+does not add work to the target raycast loop. Entity/model/global targets do
+not get static sprites because they do not have one fixed world location.
 
 ### `removeZone(id)`
 Removes a zone-based registration.

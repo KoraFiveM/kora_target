@@ -45,6 +45,26 @@ Config.target = {
     diagnostics = false,
     diagnosticsInterval = 5000,
 
+    -- Development aid: draw qblib's full box/sphere/poly outline for every
+    -- target zone. A zone registered with `debug = true` is also outlined
+    -- when this is false; set this to true to inspect all zone bounds at once.
+    debug = false,
+
+    -- A lightweight, ox_target-style world sprite at each target-zone
+    -- anchor. This deliberately only covers coordinate zones: entity/model/
+    -- global targets have no single stable location, and scanning every game
+    -- entity just to draw icons would be needlessly expensive.
+    sprites = {
+        enabled = true,
+        drawDistance = 20.0, -- meters; sprite draw work is skipped beyond this
+        offset = { x = 0.0, y = 0.0, z = 0.45 },
+        dict = 'shared',
+        name = 'info',
+        width = 0.015,
+        height = 0.02,
+        colour = { r = 30, g = 144, b = 255, a = 220 },
+    },
+
     -- No idle thread when the key is up. See client/loop.lua's +/- handlers.
 
     serverActionMaxDistance = 5.0, -- meters; default cap Target.runServerAction's server-side distance check enforces

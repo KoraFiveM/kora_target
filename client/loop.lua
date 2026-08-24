@@ -27,17 +27,20 @@ local function resetRuntimeState()
 end
 
 local function classifyEntity(entity)
-    local ok, isPed = pcall(IsEntityAPed, entity)
-    if not ok then return nil end
-    if isPed then
+    -- GetEntityType returns 0 for a handle that no longer resolves. This is a
+    -- stronger preflight than treating "not a ped and not a vehicle" as an
+    -- object: that old fallback also classified invalid handles as objects,
+    -- allowing them to reach GetEntityModel and fault in the native invoker.
+    local ok, entityType = pcall(GetEntityType, entity)
+    if not ok or entityType == 0 then return nil end
+    if entityType == 1 then
         local playerOk, isPlayer = pcall(IsPedAPlayer, entity)
         if not playerOk then return nil end
         return isPlayer and 'player' or 'ped'
     end
-    local vehicleOk, isVehicle = pcall(IsEntityAVehicle, entity)
-    if not vehicleOk then return nil end
-    if isVehicle then return 'vehicle' end
-    return 'object'
+    if entityType == 2 then return 'vehicle' end
+    if entityType == 3 then return 'object' end
+    return nil
 end
 
 local function cachedBoneCoords(entity, boneName, cache)
@@ -75,19 +78,38 @@ local function addRegistrations(out, seen, set)
     end
 end
 
+-- The pcall around GetEntityModel below stops the LUA error, but CFX's native
+-- invoker prints `script error in native ...` from inside the invoke layer
+-- BEFORE the error surfaces to pcall -- so a persistently-faulting handle
+-- aimed at every tick (50ms) still spams the console 20x/sec. Remember the
+-- failing handle for a short window and skip re-invoking the native for it.
+-- Failures ONLY: caching successful models across ticks would risk returning
+-- a stale model when the engine recycles a freed handle for a new entity;
+-- a failure entry's worst case is one extra empty-registration second.
+local FAILED_MODEL_TTL_MS = 1000
+local failedModelEntity, failedModelUntil = nil, 0
+
 -- Registration mutations increment Target.registrationRevision in state.lua,
 -- making additions/removals visible without waiting for the player to aim away.
 local function entityRegistrations(entity)
     local existsOk, exists = pcall(DoesEntityExist, entity)
     if not existsOk or not exists then return emptyRegistrations end
 
+    local entityType = classifyEntity(entity)
+    if not entityType then return emptyRegistrations end
+
+    if entity == failedModelEntity and GetGameTimer() < failedModelUntil then
+        return emptyRegistrations
+    end
+
     -- A raycast handle can go stale when an entity despawns in the same frame.
     -- GetEntityModel is one of the natives that can throw on that race, so it
     -- must be guarded even after DoesEntityExist succeeds.
     local modelOk, model = pcall(GetEntityModel, entity)
-    if not modelOk then return emptyRegistrations end
-    local entityType = classifyEntity(entity)
-    if not entityType then return emptyRegistrations end
+    if not modelOk then
+        failedModelEntity, failedModelUntil = entity, GetGameTimer() + FAILED_MODEL_TTL_MS
+        return emptyRegistrations
+    end
     local key, revision = ('%s:%s:%s'):format(entity, model, entityType), Target.registrationRevision or 0
     if entityRegistrationCache.key == key and entityRegistrationCache.revision == revision then
         return entityRegistrationCache.registrations
@@ -346,6 +368,33 @@ RegisterCommand(Config.target.selectKeybind.command, function()
     openSelector(currentCandidates)
 end, false)
 RegisterKeyMapping(Config.target.selectKeybind.command, Config.target.selectKeybind.label, 'keyboard', Config.target.selectKeybind.defaultKey)
+
+-- Config.target.debug/zoneDebugEnabled (client/state.lua) only ever get read
+-- once, at zone registration time -- flipping the config afterward does
+-- nothing to zones already created. This command is a runtime override layered
+-- on top via qblib's own QB.zones.setDebug(nil, ...) (added specifically for
+-- this), not a replacement for the config default: it lets a developer outline
+-- every already-registered target zone live, without editing config.lua and
+-- restarting the resource. `[on|off]`, or no argument to toggle.
+RegisterCommand('qbtarget_debug', function(_, args)
+    local arg = args[1] and tostring(args[1]):lower() or nil
+    local enabled
+
+    if arg == 'on' then
+        enabled = true
+    elseif arg == 'off' then
+        enabled = false
+    elseif arg == nil then
+        enabled = not Target.debugEnabled
+    else
+        print(("[qbtarget] qbtarget_debug: unrecognised argument '%s' -- use 'on', 'off', or no argument to toggle."):format(arg))
+        return
+    end
+
+    Target.debugEnabled = enabled
+    QB.zones.setDebug(nil, enabled)
+    print(("[qbtarget] target zone debug drawing %s."):format(enabled and 'enabled' or 'disabled'))
+end, false)
 
 AddEventHandler('onClientResourceStop', function(resource)
     if resource == GetCurrentResourceName() then

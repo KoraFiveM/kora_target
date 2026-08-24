@@ -6,12 +6,13 @@ A fresh targeting engine, built on `qblib` rather than reimplementing raycasting
 ## File layout
 - `config.lua` — keybinds, tick rates, distance defaults.
 - `client/state.lua` — the core data model (`Target.registrations`/`byEntity`/`byModel`/`byGlobalType`/`byGlobalBone`) and every public `add*`/`remove*` function.
+- `client/sprites.lua` — distance-culled, display-only `shared/info` zone sprites. It iterates `Target.byZone`, never the game entity pool, and has no raycast work; `drawSprite = false` opts one zone out.
 - `client/loop.lua` — keybinds, the main tick thread, candidate resolution against the raycast hit and current zones, prompt drawing, the select-key/candidate-picker flow. The picker (`openSelector`/`closeSelector`/`moveSelector`) is pointer-free by design: it polls raw controls itself and only ever pushes a display snapshot to the NUI via `qbtarget:select`, deliberately not `QB.nui.openContextMenu` -- that grants NUI focus and would free/move the OS mouse pointer mid-aim. See `Config.target.selector` for its controls and `qblib/web/src/components/target/TargetSelect.tsx` for the display side.
 - `client/exports.lua` — `exports('name', Target.name)` for qbtarget's own native function names, explicit rather than generated (unlike qblib's own `build/finalise.lua`) so it's directly auditable against the compat files' mapping tables.
 - `client/compat/qb-target.lua`, `client/compat/ox-target.lua` — translate the real qb-target/ox_target APIs onto `Target.*` and register them under those resource identities (see below). Each calls `Target.*` **directly**, not through `exports.qbtarget:...` — they run in the same resource, so there's no reason to pay for a cross-resource round trip internally.
 - `server/server.lua` — the optional `runServerAction`/`registerServerAction` relay.
 
-`fxmanifest.lua` lists `client/state.lua`, `client/loop.lua`, `client/exports.lua`, then the two `client/compat/*.lua` files explicitly, in that order — not a glob. Alphabetic glob order would load `exports.lua` before `state.lua` ever defines `Target.addEntity`, the exact problem qblib's own `fxmanifest.lua` documents for why `local/**` isn't a single glob there either. The two compat files only need to load after `state.lua` (they reference `Target.*`), so their order relative to `loop.lua`/`exports.lua` doesn't matter.
+`fxmanifest.lua` lists `client/state.lua`, `client/sprites.lua`, `client/loop.lua`, `client/exports.lua`, then the two `client/compat/*.lua` files explicitly, in that order — not a glob. Alphabetic glob order would load `exports.lua` before `state.lua` ever defines `Target.addEntity`, the exact problem qblib's own `fxmanifest.lua` documents for why `local/**` isn't a single glob there either. The sprite loop and compat files only need to load after `state.lua` (they reference `Target.*`), so their order relative to `loop.lua`/`exports.lua` doesn't matter.
 
 ## Export strategy: plain exports, not qblib's finalise.lua pattern
 qblib auto-generates exports from every `QB.<module>.<fn>` entry because it has many modules and a growing function count where hand-listing would rot. qbtarget's own native surface is small and fixed (~16 functions), and it's a clear, greppable `exports('name', fn)` list (`client/exports.lua`) that's easy to keep honest against `Target.*`. This also matches how the real qb-target/ox_target declare their own exports.
@@ -30,8 +31,20 @@ Because `qbtarget`, `'qb-target'`, and `'ox_target'` are three independently-reg
 
 `Target.byZone` (`client/state.lua`) is a flat `id -> true` set of every zone-kind registration, populated by `addBoxZone`/`addSphereZone`/`addPolyZone` and cleared in `destroyRegistration`'s `zone` branch. `client/loop.lua`'s `zoneRegistrationsAt(point)` walks it each resolve and tests `registration.zoneHandle.contains(point)` directly against that tick's raycast hit — no zone `data` stamping or a second lookup table needed, since the registration id is already the table key.
 
+## Zone visibility and debugging
+`Config.target.debug = true` is a global override passed to qblib's native zone
+constructors, so every target zone gets its normal qblib debug outline; a
+single `debug = true` zone works without the override. `client/sprites.lua`
+adds a separate player-facing visual: it draws the configured streamed texture
+sprite at `registration.spriteCoords` for nearby coordinate zones. It uses a
+500ms idle cadence and moves to frame cadence only while a visible nearby
+sprite is being drawn. Do not extend this to scan model/global registrations:
+they have no one anchor and a game-pool scan would undermine the target
+resource's performance guarantees. Native and ox_target-compatible zone calls
+accept `drawSprite = false` for a per-zone opt-out.
+
 ## Candidate resolution (client/loop.lua)
-- `classifyEntity` uses live-entity natives (`IsEntityAPed`/`IsEntityAVehicle`/`IsPedAPlayer`) to answer "what type is this entity handle", deliberately **not** qblib's `modules/entities`' `detectEntityType` — that function classifies a **model hash** to decide how to spawn something, a different operation on a different input than classifying an already-existing live entity.
+- `classifyEntity` uses live-entity natives (`GetEntityType`/`IsPedAPlayer`) to answer "what type is this entity handle", deliberately **not** qblib's `modules/entities`' `detectEntityType` — that function classifies a **model hash** to decide how to spawn something, a different operation on a different input than classifying an already-existing live entity. `GetEntityType == 0` is rejected before `GetEntityModel`; falling back from two false `IsEntityA*` checks to "object" would incorrectly let an unresolved handle through.
 - Bone-scoped options (`option.bones`, or a `globalBone` registration's own bone list) only ever match against an entity candidate (`entity` present) — a zone candidate passes `entity = nil` into `appendCandidates`, so `boneMatches` returns `false` outright for a bone-scoped option even though a zone candidate does have an aim point (the raycast hit) now; there's simply no entity to read a bone position off of.
 - The adaptive resolver uses squared-distance rejection before bone matching, then the caller's `canInteract` (which may be arbitrarily expensive and is `pcall`-wrapped). It caches registration-index lookups for a stable aimed entity and bone locations for one resolver pass, and `canInteract` results for at most `Config.target.canInteractCacheMs`; none of these caches are authoritative.
 - `Config.target.demo` must remain opt-in. Its global ped/vehicle registrations are useful for development but add evaluation work to every aimed entity in production.

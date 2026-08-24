@@ -175,10 +175,17 @@ Targets **any** entity, of any type, that has a matching bone (e.g. every vehicl
 ### `addTargetBone(entity, bone, options, defaultDistance?)`
 Sugar over `addEntity`: registers `options` on `entity`, forcing every option onto `bone` specifically.
 
-### `addBoxZone({coords, size, rotation?, options, distance?, debug?})`
-### `addSphereZone({coords, radius, options, distance?, debug?})`
-### `addPolyZone({points, thickness?, minZ?, maxZ?, options, distance?, debug?})`
+### `addBoxZone({coords, size, rotation?, options, distance?, debug?, drawSprite?})`
+### `addSphereZone({coords, radius, options, distance?, debug?, drawSprite?})`
+### `addPolyZone({points, thickness?, minZ?, maxZ?, options, distance?, debug?, drawSprite?})`
 Zone-based targets, backed by `QB.zones.box/sphere/poly` — no aiming required, just aiming at (not necessarily standing inside) the zone. Returns the registration `id`.
+
+Set `Config.target.debug = true` to outline every target zone while developing;
+an individual zone can also set `debug = true`. `Config.target.sprites` draws
+a small, distance-culled `shared/info` world sprite at each coordinate-zone
+anchor. Set `drawSprite = false` on a zone to suppress its icon. This visual
+loop never raycasts or scans the entity pool; model/entity/global targets have
+no single stable anchor and therefore intentionally do not get static sprites.
 
 ### `removeZone(id)`
 Removes a zone-based registration.
@@ -219,9 +226,11 @@ controls (default Up/Down/Escape,Backspace,Pause). `Config.target.maxDistance`
 (10.0m raycast reach) and `defaultOptionDistance` (2.5m fallback interact
 distance). `tickAcquire`/`tickActive` (50ms resolver cadence while the key is
 held; no thread at all while released). `canInteractCacheMs` (0/disabled by
-default — enable only after profiling static checks). `diagnostics` (per-hold
-resolver metrics) and `demo` (built-in global ped/vehicle demo targets,
-development only) both default to `false`.
+default — enable only after profiling static checks). `debug` (global zone
+outline) and `diagnostics` (per-hold resolver metrics) both default to
+`false`. `sprites` controls the enabled-by-default, distance-culled zone
+location icons; `demo` (built-in global ped/vehicle demo targets) defaults to
+`false`.
 
 ## Related resources
 

@@ -25,10 +25,24 @@ local function provideExport(providedResource, exportName, func)
     end)
 end
 
+-- A callback passed through an FXServer export boundary is represented as a
+-- table with an __call metamethod, not a Lua value whose type is "function"
+-- -- see client/compat/qb-target.lua's identical copy of this helper (and
+-- comment) for the concrete failure this fixes: a cross-resource
+-- `onSelect`/`action` reaching this bridge in that shape used to silently
+-- fall through to serverEvent/event/nothing, since `type(x) == 'function'`
+-- is false for it. Duplicated rather than shared for the same reason
+-- provideExport is duplicated above (separate Lua chunks, no shared local).
+local function isCallable(value)
+    if type(value) == 'function' then return true end
+    local mt = type(value) == 'table' and getmetatable(value) or nil
+    return mt ~= nil and mt.__call ~= nil
+end
+
 local function dispatchLegacy(option, entity)
-    if type(option.onSelect) == 'function' then
+    if isCallable(option.onSelect) then
         option.onSelect(entity)
-    elseif type(option.action) == 'function' then
+    elseif isCallable(option.action) then
         option.action(entity)
     elseif option.serverEvent then
         TriggerServerEvent(option.serverEvent, entity)
@@ -66,6 +80,14 @@ local function translateOxOptions(options)
             icon = option.icon,
             distance = option.distance,
             bones = option.bones,
+            -- Passed through as-is, NOT re-wrapped to real ox_target's own
+            -- contract: qbtarget's resolver always calls this with
+            -- (entity, distance, data), but real ox_target calls
+            -- canInteract(entity, distance, coords, name, bone) -- five
+            -- arguments. A ported canInteract reading coords/name/bone off
+            -- its 3rd-5th parameters sees qbtarget's shape instead. See this
+            -- file's header and ../../AGENTS.md for why this divergence is
+            -- intentionally NOT fixed here.
             canInteract = option.canInteract,
             groups = option.groups,
             items = option.items,
@@ -94,6 +116,7 @@ local function addBoxZone(zoneOpts)
         size = zoneOpts.size,
         rotation = zoneOpts.rotation,
         debug = zoneOpts.debug,
+        drawSprite = zoneOpts.drawSprite,
         options = translateOxOptions(zoneOpts.options),
     })
 end
@@ -105,6 +128,7 @@ local function addSphereZone(zoneOpts)
         coords = zoneOpts.coords,
         radius = zoneOpts.radius,
         debug = zoneOpts.debug,
+        drawSprite = zoneOpts.drawSprite,
         options = translateOxOptions(zoneOpts.options),
     })
 end
@@ -116,6 +140,7 @@ local function addPolyZone(zoneOpts)
         points = zoneOpts.points,
         thickness = zoneOpts.thickness,
         debug = zoneOpts.debug,
+        drawSprite = zoneOpts.drawSprite,
         options = translateOxOptions(zoneOpts.options),
     })
 end
@@ -183,6 +208,103 @@ local function getState()
     return Target.getState()
 end
 
+local function removeGlobal(entityType)
+    return function(id) return Target.removeGlobalType(entityType, id) end
+end
+
+local removeGlobalPlayer = removeGlobal('player')
+local removeGlobalPed = removeGlobal('ped')
+local removeGlobalVehicle = removeGlobal('vehicle')
+local removeGlobalObject = removeGlobal('object')
+
+-- addGlobalOption/removeGlobalOption: ox_target's truly-universal global
+-- option, applying to EVERY entity type at once (ped+vehicle+object+player)
+-- in one call -- distinct from addGlobalPed/Vehicle/Object/Player above,
+-- which are type-scoped. Public-knowledge assumption (medium confidence, see
+-- AGENTS.md): real ox_target's addGlobalOption(options) takes a bare options
+-- array (no explicit type argument) and returns an id that
+-- removeGlobalOption(id) later accepts. qbtarget has no single "every type
+-- at once" primitive, so this fans out to one Target.addGlobalType call per
+-- known global type, bookkept together under one synthetic group id so
+-- removeGlobalOption can undo all of them as a unit.
+local globalOptionGroups = {}
+local nextGlobalOptionId = 0
+
+local function addGlobalOption(options)
+    nextGlobalOptionId = nextGlobalOptionId + 1
+    local groupId = nextGlobalOptionId
+
+    local entries = {}
+    for _, entityType in ipairs({ 'ped', 'vehicle', 'object', 'player' }) do
+        entries[#entries + 1] = { entityType = entityType, id = Target.addGlobalType(entityType, translateOxOptions(options)) }
+    end
+
+    globalOptionGroups[groupId] = entries
+    return groupId
+end
+
+local function removeGlobalOption(groupId)
+    local entries = globalOptionGroups[groupId]
+    if not entries then return false end
+
+    globalOptionGroups[groupId] = nil
+
+    local removedAny = false
+    for _, entry in ipairs(entries) do
+        if Target.removeGlobalType(entry.entityType, entry.id) then removedAny = true end
+    end
+
+    return removedAny
+end
+
+---A bare network id or an array of network ids is normalised to an array,
+---mirroring client/state.lua's own toArray for the same single-vs-array
+---convenience.
+---@param value any
+---@return table
+local function toArray(value)
+    if type(value) == 'table' then return value end
+    return { value }
+end
+
+-- addEntity/removeEntity: real ox_target's NETWORK-id scoped entity API --
+-- different from addLocalEntity/removeLocalEntity above, which already take
+-- local entity handles valid on this client directly. ox_target's addEntity
+-- takes a network id (or array of them), letting a caller target something
+-- it only knows the netId for (e.g. received over an event); bridged here to
+-- Target.addEntity/removeEntity (both LOCAL-handle scoped) via
+-- NetworkGetEntityFromNetworkId, FiveM's standard netId->handle native.
+local function addEntity(netIds, options)
+    local entities = {}
+    for i, netId in ipairs(toArray(netIds)) do
+        entities[i] = NetworkGetEntityFromNetworkId(netId)
+    end
+
+    return Target.addEntity(entities, translateOxOptions(options))
+end
+
+local function removeEntity(netIds)
+    local removedAny = false
+    for _, netId in ipairs(toArray(netIds)) do
+        local entity = NetworkGetEntityFromNetworkId(netId)
+        if Target.removeEntity(entity) then removedAny = true end
+    end
+
+    return removedAny
+end
+
+-- isActive: real ox_target's "is targeting currently active" query.
+-- Public-knowledge assumption (low confidence, see AGENTS.md): interpreted
+-- here as "is a target option currently resolved/visible under the
+-- reticle" -- Target.getState().hovering ~= nil -- rather than "is
+-- targeting enabled at all" (Target.getState().enabled), since ox_target's
+-- own isActive is commonly used to guard UI/animation logic that only makes
+-- sense while something is actually being aimed at.
+local function isActive()
+    local state = Target.getState()
+    return state.hovering ~= nil
+end
+
 for exportName, func in pairs({
     addLocalEntity = addLocalEntity,
     addModel = addModel,
@@ -193,11 +315,20 @@ for exportName, func in pairs({
     addGlobalPed = addGlobalPed,
     addGlobalVehicle = addGlobalVehicle,
     addGlobalObject = addGlobalObject,
+    addGlobalOption = addGlobalOption,
+    addEntity = addEntity,
     removeZone = removeZone,
     removeLocalEntity = removeLocalEntity,
     removeModel = removeModel,
+    removeGlobalPlayer = removeGlobalPlayer,
+    removeGlobalPed = removeGlobalPed,
+    removeGlobalVehicle = removeGlobalVehicle,
+    removeGlobalObject = removeGlobalObject,
+    removeGlobalOption = removeGlobalOption,
+    removeEntity = removeEntity,
     disableTargeting = disableTargeting,
     getState = getState,
+    isActive = isActive,
 }) do
     provideExport('ox_target', exportName, func)
 end
