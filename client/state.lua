@@ -15,13 +15,21 @@
 
 Target = Target or {}
 
-Target.registrations = {}  -- id -> {id, kind, options, distance, entities?/models?/entityType?/bones?, zoneHandle?, promptCoords?}
+Target.registrations = {}  -- id -> {id, kind, options, distance, entities?/models?/entityType?/bones?, zoneHandle?}
 Target.byEntity = {}       -- entity -> {[id]=true}
 Target.byModel = {}        -- modelHash -> {[id]=true}
 Target.byGlobalType = {}   -- "ped"|"vehicle"|"object"|"player" -> {[id]=true}
 Target.byGlobalBone = {}   -- id -> {boneNames}
+Target.byZone = {}         -- id -> true, every zone-kind registration id (client/loop.lua tests zoneHandle.contains(hitCoords) against each)
 Target.enabled = true
 Target.hovering = nil      -- maintained by client/loop.lua each tick
+-- Monotonic local generation used by loop.lua to invalidate its aim cache as
+-- soon as a registration changes. This is not exposed as API state.
+Target.registrationRevision = 0
+
+local function touchRegistrations()
+    Target.registrationRevision = Target.registrationRevision + 1
+end
 
 local nextRegistrationId = 0
 
@@ -137,6 +145,7 @@ function Target.destroyRegistration(id)
     if not registration then return end
 
     Target.registrations[id] = nil
+    touchRegistrations()
     Target.ownership.untrack(id)
 
     if registration.kind == "entity" then
@@ -161,6 +170,7 @@ function Target.destroyRegistration(id)
         -- REAL invoking resource, captured in Target.addBoxZone/etc before
         -- ever calling into QB.zones.*) is what has to proactively tear the
         -- underlying zone down here. See AGENTS.md "Ownership subtlety".
+        Target.byZone[id] = nil
         if registration.zoneHandle then registration.zoneHandle.remove() end
     end
 end
@@ -246,6 +256,7 @@ local function register(kind, extra, options, defaultDistance)
     for k, v in pairs(extra) do registration[k] = v end
 
     Target.registrations[id] = registration
+    touchRegistrations()
     Target.ownership.track(owner, id)
 
     return registration
@@ -448,7 +459,6 @@ function Target.addBoxZone(zoneOptions)
         size = zoneOptions.size,
         rotation = zoneOptions.rotation,
         debug = zoneOptions.debug,
-        data = { qbtargetId = id },
     })
 
     Target.registrations[id] = {
@@ -457,8 +467,9 @@ function Target.addBoxZone(zoneOptions)
         options = options,
         distance = zoneOptions.distance,
         zoneHandle = zoneHandle,
-        promptCoords = zoneOptions.coords,
     }
+    Target.byZone[id] = true
+    touchRegistrations()
     Target.ownership.track(owner, id)
 
     return id
@@ -487,7 +498,6 @@ function Target.addSphereZone(zoneOptions)
         coords = zoneOptions.coords,
         radius = zoneOptions.radius,
         debug = zoneOptions.debug,
-        data = { qbtargetId = id },
     })
 
     Target.registrations[id] = {
@@ -496,8 +506,9 @@ function Target.addSphereZone(zoneOptions)
         options = options,
         distance = zoneOptions.distance,
         zoneHandle = zoneHandle,
-        promptCoords = zoneOptions.coords,
     }
+    Target.byZone[id] = true
+    touchRegistrations()
     Target.ownership.track(owner, id)
 
     return id
@@ -532,18 +543,7 @@ function Target.addPolyZone(zoneOptions)
         minZ = zoneOptions.minZ,
         maxZ = zoneOptions.maxZ,
         debug = zoneOptions.debug,
-        data = { qbtargetId = id },
     })
-
-    -- A poly zone has no single center, unlike box/sphere -- the prompt
-    -- anchor for a zone-only (not aimed-at) candidate needs SOME coordinate,
-    -- so the footprint's centroid stands in for one.
-    local sumX, sumY, sumZ = 0, 0, 0
-    for _, point in ipairs(zoneOptions.points) do
-        sumX, sumY, sumZ = sumX + point.x, sumY + point.y, sumZ + point.z
-    end
-    local n = #zoneOptions.points
-    local centroid = { x = sumX / n, y = sumY / n, z = sumZ / n }
 
     Target.registrations[id] = {
         id = id,
@@ -551,8 +551,9 @@ function Target.addPolyZone(zoneOptions)
         options = options,
         distance = zoneOptions.distance,
         zoneHandle = zoneHandle,
-        promptCoords = centroid,
     }
+    Target.byZone[id] = true
+    touchRegistrations()
     Target.ownership.track(owner, id)
 
     return id

@@ -1,9 +1,24 @@
 # qbtarget
 
-A crosshair/zone-based targeting engine built on `qblib` (`QB.raycast` for aim resolution, `QB.zones` for area-based targets, `QB.world`/`QB.drawing` as the underlying pool-query/prompt-rendering primitives, `QB.nui` for the multi-option select menu, `QB.callback` for the optional server-action relay). One resource, no separate proxy resources: it declares `provide 'qb-target'` and `provide 'ox_target'` in its `fxmanifest.lua` and registers the real, public qb-target/ox_target export names directly (`client/compat/qb-target.lua`, `client/compat/ox-target.lua`), so scripts written against `exports['qb-target']:...` or `exports.ox_target:...` keep working unmodified against this same running resource — see those two files for the exact mapping onto qbtarget's own API, and `AGENTS.md`'s "Compatibility mechanism" section for how `provide` + manual export registration actually makes that resolve.
+A crosshair/zone-based targeting engine built on `qblib` (`QB.raycast` for aim resolution, `QB.zones` for area-based targets, `QB.world`/`QB.drawing` as the underlying pool-query/prompt-rendering primitives, `QB.nui` for display-only HUD/picker messages, `QB.callback` for the optional server-action relay). One resource, no separate proxy resources: it declares `provide 'qb-target'` and `provide 'ox_target'` in its `fxmanifest.lua` and registers the real, public qb-target/ox_target export names directly (`client/compat/qb-target.lua`, `client/compat/ox-target.lua`), so scripts written against `exports['qb-target']:...` or `exports.ox_target:...` keep working unmodified against this same running resource — see those two files for the exact mapping onto qbtarget's own API, and `AGENTS.md`'s "Compatibility mechanism" section for how `provide` + manual export registration actually makes that resolve.
 
 ## Usage
-Hold `Config.target.keybind` (default `LMENU`, i.e. left Alt) to enter targeting mode. While held, aiming at a registered entity/model/global-type/global-bone, or standing inside a registered zone, shows a world-space prompt. Press `Config.target.selectKeybind` (default `E`) to run the sole option, or open a select menu when more than one is available.
+Hold `Config.target.keybind` (default `LMENU`, i.e. left Alt) to enter targeting mode. While held, aiming at a registered entity/model/global-type/global-bone/zone shows a world-space prompt fixed at screen centre (it never moves the mouse pointer or takes NUI focus). A zone match is decided by where the crosshair's raycast actually lands, not by whether the player is standing inside the zone -- you don't need to be inside a zone to target it, just aiming at a point within it. Press `Config.target.selectKeybind` (default `E`) to run the sole option, or to open a compact candidate picker when more than one is available -- cycle it with `Config.target.selector`'s previous/next controls (default Up/Down), confirm with `selectKeybind` again, or back out with its cancel controls (default Escape/Backspace/Pause). The picker is pointer-free the same way the prompt is: Lua reads the controls directly and the game never loses mouse look.
+
+## Performance configuration
+Targeting has no idle client thread while its key is up. The first scan happens
+immediately on activation; `tickAcquire` and `tickActive` both default to
+50ms while targeting is held. Rendering remains every frame in a separate
+lightweight loop, while the resolver uses broad and entity-focused raycasts to
+avoid missing an entity behind a non-targetable world hit. There is no targeting
+loop at all when the key is released. Zone matching is a plain per-tick scan of
+each registered zone's own `contains(point)` test against that tick's raycast
+hit -- no separate polling cadence to tune. `canInteractCacheMs` is disabled
+by default so dynamic foreign `canInteract`
+functions are always fresh; enable a small value only after profiling static
+checks. Set `diagnostics = true` temporarily to print per-hold resolver
+metrics. The built-in global ped/vehicle demo is disabled by default and should
+only be enabled for development.
 
 ## API
 All functions are plain FiveM exports on `qbtarget` — `exports.qbtarget:<name>(...)`. The same targets are also reachable through `exports['qb-target']:...` (PascalCase, qb-target's real function names) and `exports.ox_target:...` (camelCase, ox_target's real function names) — both are compatibility layers over this same API, not separate implementations.

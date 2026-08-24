@@ -23,12 +23,46 @@ Config.target = {
     defaultOptionDistance = 2.5,   -- meters; fallback per-option interact distance when nothing more specific is set
     boneTolerance = 0.35,          -- meters; how close a raycast hit must land to a candidate bone to count as a match
 
-    tickWhileHeld = 0,             -- ms Wait() between raycasts while the hold key is down (0 = every frame)
-    -- No idle tick: targeting runs on demand (a per-hold thread), so nothing
-    -- polls while the key is up. See client/loop.lua's +target/-target handlers.
+    -- Adaptive target-loop cadence. A scan happens immediately when targeting
+    -- starts. It then polls slowly while no option is available, but renders
+    -- and resolves every frame while an option is visible so target changes
+    -- still feel immediate.
+    tickIdle = 150,                -- ms while targeting is disabled
+    -- Resolver cadence while Alt is held. Prompt/reticle rendering remains
+    -- frame-perfect in a separate lightweight loop; raycasts and option
+    -- resolution run at 20Hz, matching the responsive split-loop approach
+    -- used by ox_target without tying expensive native work to every frame.
+    tickAcquire = 50,              -- ms while held with no available option
+    tickActive = 50,               -- ms while an option is visible
+    -- Default to no cache: third-party canInteract functions commonly depend
+    -- on rapidly-changing local state. Servers with purely static checks may
+    -- opt into a short cache after profiling.
+    canInteractCacheMs = 0,
+
+    -- Prints a small per-hold profiler summary every diagnosticsInterval ms.
+    -- Keep this off in production; it exists to make resmon investigations
+    -- measurable without adding a permanent hot-path cost.
+    diagnostics = false,
+    diagnosticsInterval = 5000,
+
+    -- No idle thread when the key is up. See client/loop.lua's +/- handlers.
 
     serverActionMaxDistance = 5.0, -- meters; default cap Target.runServerAction's server-side distance check enforces
 
     reticle = true,                -- draw a small centre-screen dot while holding the key, so targeting mode is VISIBLE even when nothing is under the crosshair (brightens over a target). Set false for a fully headless engine.
-    demo = true,                   -- register a demo "Inspect" option on all peds/vehicles at load, so holding the key + aiming at any ped/car shows a prompt out of the box. Turn OFF once real scripts register their own targets.
+    demo = false,                  -- development-only global ped/vehicle targets; enable explicitly when testing qbtarget itself.
+}
+
+-- Controls consumed only while qbtarget's own candidate picker is visible
+-- (more than one option under the reticle, selectKeybind pressed). Mirrors
+-- qblib's Config.interact control shape/values -- see modules/interact's
+-- AGENTS.md -- so both compact selectors feel identical, but kept as
+-- qbtarget's own config since Target.selectKeybind (E, confirm) is already
+-- qbtarget's, not qblib's. Never grants NUI focus: cycling/cancelling is read
+-- straight off these raw controls in client/loop.lua the same way the hold
+-- key itself is.
+Config.target.selector = {
+    previousControls = { 27 }, -- INPUT_PHONE / Up
+    nextControls = { 173 }, -- INPUT_CELLPHONE_DOWN / Down
+    cancelControls = { 322, 177, 200 }, -- Escape, Backspace, Pause
 }
