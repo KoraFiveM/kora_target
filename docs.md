@@ -86,7 +86,9 @@ Every `add*`/zone constructor takes an `options` array of:
 ```
 
 ## Opaque `item`/`job`/`gang`/`groups` fields
-An option may also carry `item`, `job`, `gang`, or `groups` fields (accepted so ported `qb-target`/`ox_target` scripts don't error), but **qbtarget never interprets them** — there is no framework installed in this repo to check a player's job/gang/inventory against. A ported script that relied on qb-target/ox_target auto-filtering these will show its option to everyone until the consumer supplies its own `canInteract` doing that check itself. This is the one behavior gap worth knowing about before relying on a ported script's restrictions.
+An option registered through **this native API** may also carry `item`, `job`, `gang`, or `groups` fields (accepted so a script using them doesn't error), but **qbtarget's own resolver never interprets them** — that's deliberate; a targeting engine has no business being coupled to a specific framework. A native caller relying on these must supply its own `canInteract` doing that check itself.
+
+If you're porting a real `qb-target` script instead of writing against this native API directly, this doesn't apply to you: the **qb-target compat shim** (`exports['qb-target']:...`, see AGENTS.md's "Job/gang/item enforcement") *does* enforce `job`/`jobType`/`gang`/`item`/`citizenid` for real, against qbcore, when it's running. The ox_target compat does not (ox_core isn't installed here).
 
 ## Server actions
 Neither real `qb-target` nor real `ox_target` validate actions server-side themselves — that has always been the consumer script's own job, and it still is here: an `onSelect` can fire its own `TriggerServerEvent`/`QB.callback.trigger` exactly as before. `runServerAction`/`registerServerAction` are an **optional** convenience for a common case (an action needs to check the target is real and nearby, server-side) without hand-rolling that check every time:

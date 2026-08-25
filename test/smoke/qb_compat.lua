@@ -34,6 +34,36 @@ _G.GetInvokingResource = function() return 'qb-banking' end
 _G.AddEventHandler = function(name, handler) exportsByEvent[name] = handler end
 _G.joaat = function(value) return value end
 _G.GetEntityCoords = function(entity) return { x = 10, y = 20, z = 30 } end
+
+-- The qb-target compat now fetches qb-core once at load time (job/gang/item
+-- enforcement, see AGENTS.md's "Job/gang/item enforcement") -- CreateThread
+-- runs synchronously here (same idiom qbcore's own legacy_callback_wire.lua
+-- test uses) so that fetch completes before any test below runs.
+_G.CreateThread = function(fn) fn() end
+local netHandlers = {}
+_G.RegisterNetEvent = function(name, handler) netHandlers[name] = handler end
+
+-- Mutable so individual tests can reassign job/gang/citizenid/items and see
+-- the compat shim's checks react -- GetPlayerData returns this SAME table by
+-- reference every call, matching real QBCore.Functions.GetPlayerData().
+local qbCorePlayerData = {
+    job = { name = 'unemployed', type = 'none', grade = { level = 0 } },
+    gang = { name = 'none', grade = { level = 0 } },
+    citizenid = 'CID1',
+}
+local heldItems = {}
+_G.exports = {
+    ['qb-core'] = {
+        GetCoreObject = function(_, _filters)
+            return {
+                Functions = {
+                    GetPlayerData = function() return qbCorePlayerData end,
+                    HasItem = function(item) return heldItems[item] == true end,
+                },
+            }
+        end,
+    },
+}
 -- Real FiveM builds vector3 as an engine-provided constructor; the
 -- standalone lua interpreter has no such global, so AddBoxZone's (and
 -- therefore AddComboZone/AddEntityZone's) size = vector3(width, length, ...)
@@ -154,6 +184,91 @@ harness.test('AllowTargeting/DisableTarget drive Target.setEnabled with opposite
     harness.assertFalse(Target.enabled, 'DisableTarget(true) must disable targeting')
     disableTarget(false)
     harness.assertTrue(Target.enabled, 'DisableTarget(false) must re-enable targeting')
+end)
+
+-- job/gang/item/jobType enforcement -- confirmed broken before this fix
+-- (real qb-policejob's target zones use jobType = 'leo' and were reachable
+-- by every player). Ported verbatim from real qb-target's own JobCheck/
+-- JobTypeCheck/GangCheck/CitizenCheck/ItemCheck semantics.
+
+-- Registrations are cheap and harmless to leave behind in Target.registrations
+-- for the rest of this file's tests -- each call below uses a fresh zone name,
+-- so nothing collides.
+local filterSmokeCounter = 0
+local function addOptionAndCheck(option)
+    filterSmokeCounter = filterSmokeCounter + 1
+    local id = addBoxZone('filter-smoke-' .. filterSmokeCounter, { x = 0, y = 0, z = 0 }, 1, 1, {}, {
+        options = { option },
+    })
+    return Target.registrations[id].options[1].canInteract(nil, 0, {})
+end
+
+harness.test('a job filter denies a player in the wrong job', function()
+    qbCorePlayerData.job = { name = 'unemployed', type = 'none', grade = { level = 0 } }
+    harness.assertFalse(addOptionAndCheck({ label = 'Cop only', job = 'police' }), 'unemployed must not pass a police-only filter')
+end)
+
+harness.test('a job filter allows a player in the right job at/above the required grade', function()
+    qbCorePlayerData.job = { name = 'police', type = 'leo', grade = { level = 2 } }
+    harness.assertTrue(addOptionAndCheck({ label = 'Cop only, grade 1+', job = { police = 1 } }), 'grade 2 must satisfy a grade>=1 requirement')
+    harness.assertFalse(addOptionAndCheck({ label = 'Cop only, grade 3+', job = { police = 3 } }), 'grade 2 must NOT satisfy a grade>=3 requirement')
+end)
+
+harness.test('jobType denies a player whose job type does not match -- the confirmed real-world bug', function()
+    qbCorePlayerData.job = { name = 'unemployed', type = 'none', grade = { level = 0 } }
+    harness.assertFalse(addOptionAndCheck({ label = 'LEO only', jobType = 'leo' }), 'a civilian must not pass jobType = "leo"')
+
+    qbCorePlayerData.job = { name = 'police', type = 'leo', grade = { level = 1 } }
+    harness.assertTrue(addOptionAndCheck({ label = 'LEO only', jobType = 'leo' }), 'an actual LEO must pass jobType = "leo"')
+end)
+
+harness.test('excludejob/excludejobType deny the excluded party and allow everyone else', function()
+    qbCorePlayerData.job = { name = 'police', type = 'leo', grade = { level = 1 } }
+    harness.assertFalse(addOptionAndCheck({ label = 'Not cops', excludejob = 'police' }), 'excludejob must deny the named job')
+    harness.assertFalse(addOptionAndCheck({ label = 'Not LEOs', excludejobType = 'leo' }), 'excludejobType must deny the named type')
+
+    qbCorePlayerData.job = { name = 'unemployed', type = 'none', grade = { level = 0 } }
+    harness.assertTrue(addOptionAndCheck({ label = 'Not cops', excludejob = 'police' }), 'a non-matching job must pass excludejob')
+end)
+
+harness.test('a gang filter behaves like a job filter', function()
+    qbCorePlayerData.gang = { name = 'ballas', grade = { level = 2 } }
+    harness.assertTrue(addOptionAndCheck({ label = 'Ballas only', gang = { ballas = 1 } }))
+    harness.assertFalse(addOptionAndCheck({ label = 'Ballas boss only', gang = { ballas = 5 } }))
+    qbCorePlayerData.gang = { name = 'none', grade = { level = 0 } }
+end)
+
+harness.test('an item filter checks QBCore.Functions.HasItem', function()
+    heldItems.lockpick = nil
+    harness.assertFalse(addOptionAndCheck({ label = 'Needs lockpick', item = 'lockpick' }))
+    heldItems.lockpick = true
+    harness.assertTrue(addOptionAndCheck({ label = 'Needs lockpick', item = 'lockpick' }))
+    heldItems.lockpick = nil
+end)
+
+harness.test('a citizenid filter matches a single id or a set', function()
+    qbCorePlayerData.citizenid = 'CID1'
+    harness.assertTrue(addOptionAndCheck({ label = 'Only CID1', citizenid = 'CID1' }))
+    harness.assertFalse(addOptionAndCheck({ label = 'Only CID2', citizenid = 'CID2' }))
+    harness.assertTrue(addOptionAndCheck({ label = 'CID1 or CID3', citizenid = { CID1 = true, CID3 = true } }))
+end)
+
+harness.test('multiple filters on one option all AND together, and the option\'s own canInteract still runs last', function()
+    qbCorePlayerData.job = { name = 'police', type = 'leo', grade = { level = 1 } }
+    heldItems.badge = true
+    local ownCanInteractCalled = false
+    harness.assertTrue(addOptionAndCheck({
+        label = 'Cop with a badge',
+        jobType = 'leo',
+        item = 'badge',
+        canInteract = function() ownCanInteractCalled = true; return true end,
+    }))
+    harness.assertTrue(ownCanInteractCalled, 'the option\'s own canInteract must still run once every filter passes')
+    heldItems.badge = nil
+end)
+
+harness.test('an option with no filters at all is unaffected (no QBCore dependency introduced for plain options)', function()
+    harness.assertTrue(addOptionAndCheck({ label = 'Anyone' }))
 end)
 
 harness.report('qbtarget qb-target compatibility')

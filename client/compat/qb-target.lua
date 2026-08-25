@@ -53,33 +53,99 @@ local function dispatchLegacy(option, entity)
     end
 end
 
--- Translates qb-target's option shape ({type?, event?, icon, label, action?,
--- canInteract?, item?, job?, gang?, distance?}) into qbtarget's own
--- QBTargetOption shape. job/gang/item are passed through UNENFORCED -- see
--- ../../docs.md's "Opaque fields" section: no qb-core exists in this repo to
--- check a player's job/gang against, so a ported script's job/gang
--- restriction shows to everyone unless it supplies its own canInteract.
-local function translateOptions(options)
-    assert(type(options) == 'table', 'qb-target target options must be a table.')
+-- job/gang/item/jobType enforcement -- qbtarget's own native resolver
+-- deliberately never interprets these fields (framework-agnostic by design,
+-- see ../../docs.md's "Opaque fields" section); this is the compat SHIM's
+-- job, done here rather than in qbtarget's core. qb-core now exists in this
+-- repo (resources/[test]/qbcore, `provide 'qb-core'`) -- pcall-guarded so
+-- this shim still degrades to the old unenforced-with-warning behaviour if
+-- it's ever dropped into a server with no qb-core identity running at all.
+-- Semantics ported verbatim from real qb-target's JobCheck/JobTypeCheck/
+-- GangCheck/CitizenCheck (client.lua's "QBCore init" CreateThread).
+local QBCore, PlayerData
 
-    local translated = {}
+local function refreshPlayerData()
+    if not QBCore then return end
+    local ok, data = pcall(QBCore.Functions.GetPlayerData)
+    if ok and data then PlayerData = data end
+end
 
-    for i, option in ipairs(options) do
-        -- Loud, once-per-option warning at REGISTRATION time (not per
-        -- interaction/frame) for the exact gap the comment above describes:
-        -- job/gang/item filter fields with no canInteract of the caller's
-        -- own means this option shows to EVERYONE, silently.
-        if (option.job or option.gang or option.item) and not option.canInteract then
-            print(('[qb-target-bridge] WARNING: option %q sets job/gang/item but this compat shim does '
-                .. 'NOT enforce those filters (no qb-core in this repo to check against) -- the option '
-                .. 'will be shown to EVERYONE unless you supply your own canInteract.')
-                :format(tostring(option.label)))
+CreateThread(function()
+    local ok, core = pcall(function() return exports['qb-core']:GetCoreObject({ 'Functions' }) end)
+    if not ok or not core then return end
+    QBCore = core
+    refreshPlayerData()
+end)
+
+RegisterNetEvent('QBCore:Client:OnPlayerLoaded', refreshPlayerData)
+RegisterNetEvent('QBCore:Client:OnPlayerUnload', function() PlayerData = nil end)
+-- Real qb-target itself listens for this exact event the same way to keep its
+-- own PlayerData in sync -- same reasoning modules/jobs/server.lua now fires
+-- it (see that file's comment) for every legacy job/gang consumer.
+RegisterNetEvent('QBCore:Client:OnPlayerUpdated', function(key, val)
+    if not PlayerData then return end
+    if key == 'job' then PlayerData.job = val
+    elseif key == 'gang' then PlayerData.gang = val
+    elseif key == 'all' then PlayerData = val end
+end)
+
+local function jobCheck(job)
+    if not PlayerData then return false end
+    if type(job) == 'table' then
+        local required = job[PlayerData.job.name]
+        return required ~= nil and PlayerData.job.grade.level >= required
+    end
+    return job == 'all' or job == PlayerData.job.name
+end
+
+local function jobTypeCheck(jobType)
+    if not PlayerData then return false end
+    if type(jobType) == 'table' then return jobType[PlayerData.job.type] ~= nil end
+    return jobType == 'all' or jobType == PlayerData.job.type
+end
+
+local function gangCheck(gang)
+    if not PlayerData then return false end
+    if type(gang) == 'table' then
+        local required = gang[PlayerData.gang.name]
+        return required ~= nil and PlayerData.gang.grade.level >= required
+    end
+    return gang == 'all' or gang == PlayerData.gang.name
+end
+
+local function citizenCheck(citizenid)
+    if not PlayerData then return false end
+    if type(citizenid) == 'table' then return citizenid[PlayerData.citizenid] end
+    return citizenid == PlayerData.citizenid
+end
+
+-- Wraps a translated option's canInteract with the enforcement chain above --
+-- ALL supplied filters must pass, exactly like real qb-target's CheckOptions,
+-- before falling through to the option's own canInteract (if any). If QBCore
+-- never became available at all, every filter check is skipped (never denies)
+-- so the option still shows -- same graceful, warned degradation as before.
+local function makeCanInteract(option)
+    local hasFilter = option.job or option.excludejob or option.jobType or option.excludejobType
+        or option.gang or option.excludegang or option.item or option.citizenid
+
+    if hasFilter and not QBCore then
+        print(('[qb-target-bridge] WARNING: option %q sets a job/gang/item/jobType filter but no qb-core '
+            .. 'identity resource is running -- the option will be shown to EVERYONE unless it supplies its '
+            .. 'own canInteract.'):format(tostring(option.label)))
+    end
+
+    return function(entity, distance, data)
+        if QBCore then
+            if option.job and not jobCheck(option.job) then return false end
+            if option.excludejob and jobCheck(option.excludejob) then return false end
+            if option.jobType and not jobTypeCheck(option.jobType) then return false end
+            if option.excludejobType and jobTypeCheck(option.excludejobType) then return false end
+            if option.gang and not gangCheck(option.gang) then return false end
+            if option.excludegang and gangCheck(option.excludegang) then return false end
+            if option.item and not QBCore.Functions.HasItem(option.item) then return false end
+            if option.citizenid and not citizenCheck(option.citizenid) then return false end
         end
-
-        translated[i] = {
-            label = option.label,
-            icon = option.icon,
-            distance = option.distance,
+        if isCallable(option.canInteract) then
             -- Passed through as-is, NOT re-wrapped to real qb-target's own
             -- contract: qbtarget's resolver always calls this with
             -- (entity, distance, data), but real qb-target only ever calls
@@ -87,10 +153,26 @@ local function translateOptions(options)
             -- reads its 2nd/3rd parameter sees qbtarget's shape, not
             -- qb-target's. See this file's header and ../../AGENTS.md for
             -- why this divergence is intentionally NOT fixed here.
-            canInteract = option.canInteract,
-            item = option.item,
-            job = option.job,
-            gang = option.gang,
+            return option.canInteract(entity, distance, data)
+        end
+        return true
+    end
+end
+
+-- Translates qb-target's option shape ({type?, event?, icon, label, action?,
+-- canInteract?, item?, job?, gang?, jobType?, distance?}) into qbtarget's own
+-- QBTargetOption shape.
+local function translateOptions(options)
+    assert(type(options) == 'table', 'qb-target target options must be a table.')
+
+    local translated = {}
+
+    for i, option in ipairs(options) do
+        translated[i] = {
+            label = option.label,
+            icon = option.icon,
+            distance = option.distance,
+            canInteract = makeCanInteract(option),
             onSelect = function(entity)
                 dispatchLegacy(option, entity)
             end,
