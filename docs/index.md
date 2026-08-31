@@ -220,9 +220,8 @@ An option may also carry `item`, `job`, `gang`, or `groups` fields (accepted so 
 
 `Config.target.keybind` (default `LMENU`, hold-to-target) and `Config.target.toggle`
 (set `true` for press-to-activate instead of hold, matching ox_target's default).
-`Config.target.selectKeybind` (default `E`) runs the sole option or opens the
-candidate picker; `Config.target.selector` sets its previous/next/cancel
-controls (default Up/Down/Escape,Backspace,Pause). `Config.target.maxDistance`
+Releasing `Config.target.keybind` runs the sole option or opens qblib's focused
+menu for multiple options (mouse and keyboard both work). `Config.target.maxDistance`
 (10.0m raycast reach) and `defaultOptionDistance` (2.5m fallback interact
 distance). `tickAcquire`/`tickActive` (50ms resolver cadence while the key is
 held; no thread at all while released). `canInteractCacheMs` (0/disabled by

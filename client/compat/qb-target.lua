@@ -409,6 +409,168 @@ local function RemoveTargetBone(id)
     return Target.removeGlobalBone(id)
 end
 
+-- qb-target bundles a small ped spawner that resources such as qb-taxijob use
+-- through exports['qb-target']:SpawnPed(...). Keep its state in this compat
+-- layer rather than adding ped lifecycle concerns to qbtarget's native API.
+-- Each spawned ped also remembers the exact target registration created for
+-- it so explicit removal and resource-stop cleanup don't leave stale entity or
+-- model registrations behind.
+local spawnedPedConfigs = {}
+local spawnedPedOwners = {}
+local spawnedPedRecords = {}
+local nextSpawnedPedConfig = 0
+
+local function applyPedConfig(ped, data)
+    if data.freeze then FreezeEntityPosition(ped, true) end
+    if data.invincible then SetEntityInvincible(ped, true) end
+    if data.blockevents then SetBlockingOfNonTemporaryEvents(ped, true) end
+
+    if data.animDict and data.anim then
+        RequestAnimDict(data.animDict)
+        while not HasAnimDictLoaded(data.animDict) do Wait(0) end
+        TaskPlayAnim(ped, data.animDict, data.anim, 8.0, 0, -1, data.flag or 1, 0, false, false, false)
+    end
+
+    if data.scenario then
+        SetPedCanPlayAmbientAnims(ped, true)
+        TaskStartScenarioInPlace(ped, data.scenario, 0, true)
+    end
+
+    if data.pedrelations then
+        local relations = data.pedrelations
+        assert(type(relations.groupname) == 'string', 'SpawnPed pedrelations.groupname must be a string.')
+
+        local groupHash = joaat(relations.groupname)
+        if not DoesRelationshipGroupExist(groupHash) then AddRelationshipGroup(relations.groupname) end
+        SetPedRelationshipGroupHash(ped, groupHash)
+
+        if relations.toplayer then
+            SetRelationshipBetweenGroups(relations.toplayer, groupHash, joaat('PLAYER'))
+        end
+        if relations.toowngroup then
+            SetRelationshipBetweenGroups(relations.toowngroup, groupHash, groupHash)
+        end
+    end
+
+    if data.weapon then
+        if type(data.weapon.name) == 'string' then data.weapon.name = joaat(data.weapon.name) end
+        if IsWeaponValid(data.weapon.name) then
+            SetCanPedEquipWeapon(ped, data.weapon.name, true)
+            GiveWeaponToPed(ped, data.weapon.name, data.weapon.ammo, data.weapon.hidden or false, true)
+            SetPedCurrentWeaponVisible(ped, not data.weapon.hidden or false, true)
+        end
+    end
+
+    local targetRegistrationId
+    if data.target then
+        if data.target.useModel then
+            targetRegistrationId = AddTargetModel(data.model, data.target)
+        else
+            targetRegistrationId = AddTargetEntity(ped, data.target)
+        end
+    end
+
+    if isCallable(data.action) then data.action(data) end
+    return targetRegistrationId
+end
+
+local function spawnOnePed(data, owner, configIndex)
+    assert(type(data) == 'table', 'SpawnPed entries must be tables.')
+    assert(data.model ~= nil, 'SpawnPed requires a model.')
+    assert(data.coords ~= nil, 'SpawnPed requires coords.')
+
+    if type(data.model) == 'string' then data.model = joaat(data.model) end
+    RequestModel(data.model)
+    while not HasModelLoaded(data.model) do Wait(0) end
+
+    local z = data.minusOne and (data.coords.z - 1.0) or data.coords.z
+    local ped = CreatePed(0, data.model, data.coords.x, data.coords.y, z, data.coords.w or 0.0,
+        data.networked or false, true)
+    local targetRegistrationId = applyPedConfig(ped, data)
+
+    data.currentpednumber = ped
+    spawnedPedRecords[ped] = {
+        configIndex = configIndex,
+        data = data,
+        owner = owner,
+        targetRegistrationId = targetRegistrationId,
+        targetUsesModel = data.target and data.target.useModel == true,
+    }
+    return ped
+end
+
+local function addSpawnedPedConfig(data, owner)
+    nextSpawnedPedConfig = nextSpawnedPedConfig + 1
+    local configIndex = nextSpawnedPedConfig
+    spawnedPedConfigs[configIndex] = data
+    spawnedPedOwners[configIndex] = owner
+
+    if data.spawnNow then spawnOnePed(data, owner, configIndex) end
+end
+
+local function SpawnPed(data)
+    assert(type(data) == 'table', 'SpawnPed requires a ped config or array of ped configs.')
+    local owner = GetInvokingResource() or GetCurrentResourceName()
+    local key, value = next(data)
+
+    -- Match qb-target's distinction between one string-keyed ped config and
+    -- an array/map of numeric-keyed ped configs.
+    if type(value) == 'table' and type(key) ~= 'string' then
+        for _, pedConfig in pairs(data) do addSpawnedPedConfig(pedConfig, owner) end
+    else
+        addSpawnedPedConfig(data, owner)
+    end
+end
+
+local function removeSpawnedPedEntity(ped)
+    local record = spawnedPedRecords[ped]
+    if record and record.targetRegistrationId then
+        if record.targetUsesModel then
+            Target.removeModel(record.data.model, record.targetRegistrationId)
+        else
+            Target.removeEntity(ped, record.targetRegistrationId)
+        end
+    end
+
+    DeletePed(ped)
+    if record then
+        record.data.currentpednumber = 0
+        spawnedPedRecords[ped] = nil
+    end
+end
+
+local function RemoveSpawnedPed(peds)
+    if type(peds) == 'table' then
+        for configIndex, ped in pairs(peds) do
+            removeSpawnedPedEntity(ped)
+            if spawnedPedConfigs[configIndex] then
+                spawnedPedConfigs[configIndex].currentpednumber = 0
+            end
+        end
+    elseif type(peds) == 'number' then
+        removeSpawnedPedEntity(peds)
+    end
+end
+
+-- Real qb-target removes its configured peds when it stops. Because this
+-- resource also serves other resources directly, additionally clean up only
+-- the peds belonging to an individual caller when that caller stops.
+AddEventHandler('onClientResourceStop', function(resource)
+    local removeAll = resource == GetCurrentResourceName()
+    local peds = {}
+    for ped, record in pairs(spawnedPedRecords) do
+        if removeAll or record.owner == resource then peds[#peds + 1] = ped end
+    end
+    for _, ped in ipairs(peds) do removeSpawnedPedEntity(ped) end
+
+    for configIndex, owner in pairs(spawnedPedOwners) do
+        if removeAll or owner == resource then
+            spawnedPedConfigs[configIndex] = nil
+            spawnedPedOwners[configIndex] = nil
+        end
+    end
+end)
+
 -- RaycastCamera: real qb-target's manual raycast-from-camera helper.
 -- qbtarget's own primitive, QB.raycast.fromCamera (qblib), returns
 -- (hit, coords, entityHit, surfaceNormal). Public-knowledge assumption
@@ -459,6 +621,8 @@ for exportName, func in pairs({
     RemoveGlobalObject = RemoveGlobalObject,
     RemoveGlobalPlayer = RemoveGlobalPlayer,
     RemoveTargetBone = RemoveTargetBone,
+    SpawnPed = SpawnPed,
+    RemoveSpawnedPed = RemoveSpawnedPed,
     RaycastCamera = RaycastCamera,
     AllowTargeting = AllowTargeting,
     DisableTarget = DisableTarget,

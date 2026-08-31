@@ -2,7 +2,6 @@ Target = Target or {}
 
 local holding, holdingThread, menuOpen = false, false, false
 local currentCandidates = {}
-local selectorCandidates, selectorIndex = nil, nil
 
 -- Runtime-only resolver state. This cache never decides authority; it simply
 -- avoids resolving the same world/registration combination more often than a
@@ -253,62 +252,31 @@ local function runOption(candidate)
     if not ok then print(("[qbtarget] onSelect for option '%s' errored: %s"):format(candidate.option.label, tostring(err))) end
 end
 
-local function isPressed(controls)
-    for _, control in ipairs(controls) do
-        if IsDisabledControlJustPressed(0, control) then return true end
-    end
-    return false
-end
+---Resolves the candidates captured at Alt release. One option is immediate;
+---multiple options deliberately use qblib's regular menu, which takes focus
+---only after targeting has ended and supports both mouse and keyboard input.
+local function selectCandidates(candidates)
+    if #candidates == 0 then return end
+    if #candidates == 1 then return runOption(candidates[1]) end
 
--- Pointer-free candidate picker shown when more than one option is under the
--- reticle. Deliberately not QB.nui.openContextMenu: that grants NUI focus
--- (SetNuiFocus(true, true)), which frees/moves the OS mouse pointer and
--- breaks camera look -- exactly what a targeting tool must never do mid-aim.
--- This instead follows qblib's own QB.interact shape (see its AGENTS.md):
--- Lua reads the raw controls itself (still routed to the game, never to the
--- NUI) and only ever pushes a display snapshot to the browser, the same
--- one-way contract client/loop.lua already uses for the reticle/prompt HUD.
-local function closeSelector()
-    if not selectorCandidates then return end
-    selectorCandidates, selectorIndex = nil, nil
-    menuOpen = false
-    QB.nui.send('qbtarget:select', { active = false })
-end
-
-local function syncSelector()
-    local items = {}
-    for i, candidate in ipairs(selectorCandidates) do
-        items[i] = { label = candidate.option.label, icon = candidate.option.icon }
-    end
-    QB.nui.send('qbtarget:select', { active = true, items = items, activeIndex = selectorIndex })
-end
-
-local function moveSelector(delta)
-    selectorIndex = ((selectorIndex - 1 + delta) % #selectorCandidates) + 1
-    syncSelector()
-end
-
-local function openSelector(candidates)
-    selectorCandidates, selectorIndex = candidates, 1
     menuOpen = true
-    resetRuntimeState()
-    syncSelector()
+    local items, byId = {}, {}
+    for index, candidate in ipairs(candidates) do
+        local id = tostring(index)
+        items[index] = {
+            id = id,
+            label = candidate.option.label,
+            icon = candidate.option.icon,
+        }
+        byId[id] = candidate
+    end
 
     CreateThread(function()
-        local controls = Config.target.selector
-        while selectorCandidates do
-            for _, control in ipairs(controls.previousControls) do DisableControlAction(0, control, true) end
-            for _, control in ipairs(controls.nextControls) do DisableControlAction(0, control, true) end
-            for _, control in ipairs(controls.cancelControls) do DisableControlAction(0, control, true) end
-
-            if isPressed(controls.cancelControls) then
-                closeSelector()
-            elseif isPressed(controls.previousControls) then
-                moveSelector(-1)
-            elseif isPressed(controls.nextControls) then
-                moveSelector(1)
-            end
-            Wait(0)
+        local result = QB.nui.openMenu(items, 'Select action')
+        menuOpen = false
+        if result and not result.cancelled then
+            local selected = byId[result.selectedId]
+            if selected then runOption(selected) end
         end
     end)
 end
@@ -347,27 +315,25 @@ end
 if Config.target.toggle then
     RegisterCommand('+' .. Config.target.keybind.command, function()
         holding = not holding
-        if holding then startTargeting() else closeSelector() end
+        if holding then
+            startTargeting()
+        else
+            local candidates = currentCandidates
+            resetRuntimeState()
+            selectCandidates(candidates)
+        end
     end, false)
     RegisterCommand('-' .. Config.target.keybind.command, function() end, false)
 else
     RegisterCommand('+' .. Config.target.keybind.command, function() holding = true; startTargeting() end, false)
-    RegisterCommand('-' .. Config.target.keybind.command, function() holding = false; closeSelector() end, false)
+    RegisterCommand('-' .. Config.target.keybind.command, function()
+        holding = false
+        local candidates = currentCandidates
+        resetRuntimeState()
+        selectCandidates(candidates)
+    end, false)
 end
 RegisterKeyMapping('+' .. Config.target.keybind.command, Config.target.keybind.label, 'keyboard', Config.target.keybind.defaultKey)
-
-RegisterCommand(Config.target.selectKeybind.command, function()
-    if selectorCandidates then
-        local selected = selectorCandidates[selectorIndex]
-        closeSelector()
-        if selected then runOption(selected) end
-        return
-    end
-    if not (Target.enabled and holding) or menuOpen or #currentCandidates == 0 then return end
-    if #currentCandidates == 1 then runOption(currentCandidates[1]); return end
-    openSelector(currentCandidates)
-end, false)
-RegisterKeyMapping(Config.target.selectKeybind.command, Config.target.selectKeybind.label, 'keyboard', Config.target.selectKeybind.defaultKey)
 
 -- Config.target.debug/zoneDebugEnabled (client/state.lua) only ever get read
 -- once, at zone registration time -- flipping the config afterward does
@@ -399,7 +365,6 @@ end, false)
 AddEventHandler('onClientResourceStop', function(resource)
     if resource == GetCurrentResourceName() then
         holding, menuOpen = false, false
-        closeSelector()
         resetRuntimeState()
     end
 end)

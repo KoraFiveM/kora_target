@@ -15,10 +15,6 @@ Config.target = {
     -- and only the press flips state. See client/loop.lua.
     toggle = false,
 
-    -- Press this key while a prompt is showing to run its option (or open a
-    -- menu, if more than one option is available).
-    selectKeybind = { command = 'qbtarget_select', defaultKey = 'E', label = 'Target: select / interact' },
-
     maxDistance = 10.0,            -- meters; QB.raycast.fromCamera's max reach while the hold key is down
     defaultOptionDistance = 2.5,   -- meters; fallback per-option interact distance when nothing more specific is set
     boneTolerance = 0.35,          -- meters; how close a raycast hit must land to a candidate bone to count as a match
@@ -71,18 +67,4 @@ Config.target = {
 
     reticle = true,                -- draw a small centre-screen dot while holding the key, so targeting mode is VISIBLE even when nothing is under the crosshair (brightens over a target). Set false for a fully headless engine.
     demo = false,                  -- development-only global ped/vehicle targets; enable explicitly when testing qbtarget itself.
-}
-
--- Controls consumed only while qbtarget's own candidate picker is visible
--- (more than one option under the reticle, selectKeybind pressed). Mirrors
--- qblib's Config.interact control shape/values -- see modules/interact's
--- AGENTS.md -- so both compact selectors feel identical, but kept as
--- qbtarget's own config since Target.selectKeybind (E, confirm) is already
--- qbtarget's, not qblib's. Never grants NUI focus: cycling/cancelling is read
--- straight off these raw controls in client/loop.lua the same way the hold
--- key itself is.
-Config.target.selector = {
-    previousControls = { 27 }, -- INPUT_PHONE / Up
-    nextControls = { 173 }, -- INPUT_CELLPHONE_DOWN / Down
-    cancelControls = { 322, 177, 200 }, -- Escape, Backspace, Pause
 }

@@ -35,6 +35,48 @@ _G.AddEventHandler = function(name, handler) exportsByEvent[name] = handler end
 _G.joaat = function(value) return value end
 _G.GetEntityCoords = function(entity) return { x = 10, y = 20, z = 30 } end
 
+local requestedModels = {}
+local createdPeds = {}
+local deletedPeds = {}
+local frozenPeds = {}
+local invinciblePeds = {}
+local blockedPeds = {}
+_G.Wait = function() end
+_G.RequestModel = function(model) requestedModels[#requestedModels + 1] = model end
+_G.HasModelLoaded = function() return true end
+_G.CreatePed = function(pedType, model, x, y, z, heading, networked, missionPed)
+    local ped = 500 + #createdPeds + 1
+    createdPeds[#createdPeds + 1] = {
+        ped = ped,
+        pedType = pedType,
+        model = model,
+        x = x,
+        y = y,
+        z = z,
+        heading = heading,
+        networked = networked,
+        missionPed = missionPed,
+    }
+    return ped
+end
+_G.DeletePed = function(ped) deletedPeds[#deletedPeds + 1] = ped end
+_G.FreezeEntityPosition = function(ped, state) frozenPeds[ped] = state end
+_G.SetEntityInvincible = function(ped, state) invinciblePeds[ped] = state end
+_G.SetBlockingOfNonTemporaryEvents = function(ped, state) blockedPeds[ped] = state end
+_G.RequestAnimDict = function() end
+_G.HasAnimDictLoaded = function() return true end
+_G.TaskPlayAnim = function() end
+_G.SetPedCanPlayAmbientAnims = function() end
+_G.TaskStartScenarioInPlace = function() end
+_G.DoesRelationshipGroupExist = function() return true end
+_G.AddRelationshipGroup = function() end
+_G.SetPedRelationshipGroupHash = function() end
+_G.SetRelationshipBetweenGroups = function() end
+_G.IsWeaponValid = function() return false end
+_G.SetCanPedEquipWeapon = function() end
+_G.GiveWeaponToPed = function() end
+_G.SetPedCurrentWeaponVisible = function() end
+
 -- The qb-target compat now fetches qb-core once at load time (job/gang/item
 -- enforcement, see AGENTS.md's "Job/gang/item enforcement") -- CreateThread
 -- runs synchronously here (same idiom qbcore's own legacy_callback_wire.lua
@@ -91,6 +133,8 @@ local removeGlobalObject = getExport('RemoveGlobalObject')
 local removeGlobalPlayer = getExport('RemoveGlobalPlayer')
 local addTargetBone = getExport('AddTargetBone')
 local removeTargetBone = getExport('RemoveTargetBone')
+local spawnPed = getExport('SpawnPed')
+local removeSpawnedPed = getExport('RemoveSpawnedPed')
 local raycastCamera = getExport('RaycastCamera')
 local allowTargeting = getExport('AllowTargeting')
 local disableTarget = getExport('DisableTarget')
@@ -164,6 +208,62 @@ harness.test('RemoveTargetBone forwards to Target.removeGlobalBone', function()
     harness.assertTrue(Target.registrations[id] ~= nil, 'AddTargetBone must register')
     harness.assertTrue(removeTargetBone(id), 'RemoveTargetBone must remove the bone registration')
     harness.assertTrue(Target.registrations[id] == nil, 'the bone registration must be gone after removal')
+end)
+
+harness.test('SpawnPed supports qb-taxijob config and registers its entity target', function()
+    qbCorePlayerData.job = { name = 'taxi', type = 'taxi', grade = { level = 0 } }
+    local actionCalls = 0
+    local pedConfig = {
+        model = 'a_m_m_indian_01',
+        coords = { x = 901.34, y = -170.06, z = 74.08, w = 228.81 },
+        minusOne = true,
+        freeze = true,
+        invincible = true,
+        blockevents = true,
+        target = {
+            options = {
+                {
+                    type = 'client',
+                    event = 'qb-taxijob:client:requestcab',
+                    icon = 'fas fa-sign-in-alt',
+                    label = 'Request Taxi Cab',
+                    job = 'taxi',
+                },
+            },
+            distance = 2.5,
+        },
+        action = function() actionCalls = actionCalls + 1 end,
+        spawnNow = true,
+        currentpednumber = 0,
+    }
+
+    spawnPed(pedConfig)
+
+    local ped = pedConfig.currentpednumber
+    local created = createdPeds[#createdPeds]
+    harness.assertEqual(requestedModels[#requestedModels], 'a_m_m_indian_01', 'SpawnPed must request the configured model')
+    harness.assertEqual(created.ped, ped, 'SpawnPed must publish the created handle as currentpednumber')
+    harness.assertEqual(created.z, 73.08, 'minusOne must lower the spawn z coordinate by one')
+    harness.assertEqual(created.heading, 228.81, 'the vector4 w component must become the ped heading')
+    harness.assertFalse(created.networked, 'peds default to local/non-networked')
+    harness.assertTrue(created.missionPed, 'explicitly spawned peds must be script-hosted mission peds')
+    harness.assertTrue(frozenPeds[ped], 'freeze must freeze the spawned ped')
+    harness.assertTrue(invinciblePeds[ped], 'invincible must make the spawned ped invincible')
+    harness.assertTrue(blockedPeds[ped], 'blockevents must block non-temporary events')
+    harness.assertEqual(actionCalls, 1, 'the optional spawn action must run once')
+
+    local registrations = Target.byEntity[ped]
+    harness.assertTrue(registrations ~= nil, 'the spawned ped must have an entity target registration')
+    local registrationId = next(registrations)
+    local registration = Target.registrations[registrationId]
+    harness.assertEqual(registration.distance, 2.5, 'the embedded target distance must be preserved')
+    harness.assertTrue(registration.options[1].canInteract(ped, 1.0, {}), 'the embedded taxi job filter must be enforced')
+
+    removeSpawnedPed(ped)
+    harness.assertEqual(deletedPeds[#deletedPeds], ped, 'RemoveSpawnedPed must delete the ped')
+    harness.assertEqual(pedConfig.currentpednumber, 0, 'RemoveSpawnedPed must clear currentpednumber')
+    harness.assertTrue(Target.registrations[registrationId] == nil,
+        'RemoveSpawnedPed must tear down the ped target registration')
 end)
 
 harness.test('RaycastCamera reorders qbtarget raycast results to (entityHit, coords, hit, surfaceNormal)', function()
