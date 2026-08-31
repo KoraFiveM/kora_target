@@ -43,6 +43,13 @@ _G.QB = {
     end },
     nui = { send = function() end },
     callback = { trigger = function() end },
+    keybind = {
+        add = function(options)
+            commands[options.name] = options.onPressed
+            commands['-' .. options.name] = options.onReleased
+            return { remove = function() return true end }
+        end,
+    },
 }
 
 _G.GetCurrentResourceName = function() return 'qbtarget' end

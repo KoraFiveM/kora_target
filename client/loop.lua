@@ -312,8 +312,18 @@ local function startTargeting()
     end)
 end
 
-if Config.target.toggle then
-    RegisterCommand('+' .. Config.target.keybind.command, function()
+QB.keybind.add({
+    name = Config.target.keybind.command,
+    description = Config.target.keybind.label,
+    defaultMapper = 'keyboard',
+    defaultKey = Config.target.keybind.defaultKey,
+    onPressed = function()
+        if not Config.target.toggle then
+            holding = true
+            startTargeting()
+            return
+        end
+
         holding = not holding
         if holding then
             startTargeting()
@@ -322,18 +332,15 @@ if Config.target.toggle then
             resetRuntimeState()
             selectCandidates(candidates)
         end
-    end, false)
-    RegisterCommand('-' .. Config.target.keybind.command, function() end, false)
-else
-    RegisterCommand('+' .. Config.target.keybind.command, function() holding = true; startTargeting() end, false)
-    RegisterCommand('-' .. Config.target.keybind.command, function()
+    end,
+    onReleased = function()
+        if Config.target.toggle then return end
         holding = false
         local candidates = currentCandidates
         resetRuntimeState()
         selectCandidates(candidates)
-    end, false)
-end
-RegisterKeyMapping('+' .. Config.target.keybind.command, Config.target.keybind.label, 'keyboard', Config.target.keybind.defaultKey)
+    end,
+})
 
 -- Config.target.debug/zoneDebugEnabled (client/state.lua) only ever get read
 -- once, at zone registration time -- flipping the config afterward does
