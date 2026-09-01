@@ -2,6 +2,12 @@
 
 A crosshair/zone-based targeting engine built on `qblib` (`QB.raycast` for aim resolution, `QB.zones` for area-based targets, `QB.world`/`QB.drawing` as the underlying pool-query/prompt-rendering primitives, `QB.nui` for display-only HUD/picker messages, `QB.callback` for the optional server-action relay). One resource, no separate proxy resources: it declares `provide 'qb-target'` and `provide 'ox_target'` in its `fxmanifest.lua` and registers the real, public qb-target/ox_target export names directly (`client/compat/qb-target.lua`, `client/compat/ox-target.lua`), so scripts written against `exports['qb-target']:...` or `exports.ox_target:...` keep working unmodified against this same running resource — see those two files for the exact mapping onto qbtarget's own API, and `AGENTS.md`'s "Compatibility mechanism" section for how `provide` + manual export registration actually makes that resolve.
 
+`PolyZone` remains a dependency for the qb-target surface, just as it is
+upstream. The manifest loads its classes so legacy zone exports return genuine
+BoxZone/CircleZone/PolyZone/ComboZone/EntityZone objects and retain their full
+public methods; qbtarget's native zone engine still resolves selection through
+qblib.
+
 ## Usage
 Hold `Config.target.keybind` (default `LMENU`, i.e. left Alt) to enter targeting mode. While held, aiming at a registered entity/model/global-type/global-bone/zone shows a world-space prompt fixed at screen centre (it never moves the mouse pointer or takes NUI focus). A zone match is decided by where the crosshair's raycast actually lands, not by whether the player is standing inside a zone -- you don't need to be inside a zone to target it, just aiming at a point within it. Release Alt to act: a sole available option runs immediately (its label is shown in the prompt while held); two or more options open qblib's focused menu after Alt is released, where the player can choose with mouse or keyboard.
 
@@ -22,6 +28,24 @@ only be enabled for development.
 
 ## API
 All functions are plain FiveM exports on `qbtarget` — `exports.qbtarget:<name>(...)`. The same targets are also reachable through `exports['qb-target']:...` (PascalCase, qb-target's real function names) and `exports.ox_target:...` (camelCase, ox_target's real function names) — both are compatibility layers over this same API, not separate implementations.
+
+### qb-target drop-in compatibility
+
+The `qb-target` identity exposes every export in current upstream, including
+all zone/entity/model/bone/global add/remove calls, label-addressed getters and
+updates, ped spawning, target/NUI state controls, raycast helpers, and outline/
+bone checks. Legacy options retain `num` ordering, `required_item`, the exact
+`action`/client/server/command/qbcommand dispatch payload, and
+`canInteract(entity, distance, data)`. Job, job-type, gang, item, and citizen
+filters are enforced through `qb-core`.
+
+Zone calls keep PolyZone behavior: they return zone-compatible objects,
+`GetZoneData` returns that same object, vec2 polygons are accepted, missing Z
+bounds remain 2D, combo calls accept live PolyZone objects, and EntityZone
+bounds follow the entity. Entity/model/bone/global options merge and can be
+read, replaced, or removed by label. `RaycastCamera` returns
+`coords, distance, entity, entityType`; `DisableTarget(true)` cancels the
+current session while `AllowTargeting(false)` changes the persistent gate.
 
 ### `addEntity(entity, options, defaultDistance?)` / `removeEntity(entity, id?)`
 Targets one or more specific entity handles.
@@ -66,7 +90,7 @@ Removes a zone-based registration.
 Globally enables/disables the whole targeting loop.
 
 ### `getState()`
-Returns `{ enabled: boolean, hovering: table|nil }`. `hovering` mirrors whatever the tick loop last resolved (`{ kind, id, entity?, zoneId?, optionCount }`), or `nil` when nothing is currently targeted.
+Returns `{ enabled: boolean, active: boolean, success: boolean, hovering: table|nil }`. `hovering` mirrors whatever the tick loop last resolved (`{ kind, id, entity?, zoneId?, optionCount }`), or `nil` when nothing is currently targeted.
 
 ### `runServerAction(name, entity?, maxDistance?, ...)` (client) / `registerServerAction(name, handler)` (server)
 Optional server-action relay with distance revalidation — see "Server actions" below.
@@ -88,7 +112,7 @@ Every `add*`/zone constructor takes an `options` array of:
 ## Opaque `item`/`job`/`gang`/`groups` fields
 An option registered through **this native API** may also carry `item`, `job`, `gang`, or `groups` fields (accepted so a script using them doesn't error), but **qbtarget's own resolver never interprets them** — that's deliberate; a targeting engine has no business being coupled to a specific framework. A native caller relying on these must supply its own `canInteract` doing that check itself.
 
-If you're porting a real `qb-target` script instead of writing against this native API directly, this doesn't apply to you: the **qb-target compat shim** (`exports['qb-target']:...`, see AGENTS.md's "Job/gang/item enforcement") *does* enforce `job`/`jobType`/`gang`/`item`/`citizenid` for real, against qbcore, when it's running. The ox_target compat does not (ox_core isn't installed here).
+If you're porting a real `qb-target` script instead of writing against this native API directly, this doesn't apply to you: the **qb-target compat shim** (`exports['qb-target']:...`, see AGENTS.md's "Job/gang/item enforcement") enforces `job`/`excludejob`/`jobType`/`excludejobType`/`gang`/`excludegang`/`item`/`citizenid` against qbcore. The ox_target compat does not interpret ox_core groups.
 
 ## Server actions
 Neither real `qb-target` nor real `ox_target` validate actions server-side themselves — that has always been the consumer script's own job, and it still is here: an `onSelect` can fire its own `TriggerServerEvent`/`QB.callback.trigger` exactly as before. `runServerAction`/`registerServerAction` are an **optional** convenience for a common case (an action needs to check the target is real and nearby, server-side) without hand-rolling that check every time:

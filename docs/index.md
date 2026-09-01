@@ -155,6 +155,24 @@ The same targets are also reachable through `exports['qb-target']:...`
 (camelCase, ox_target's real function names) — both are compatibility layers
 over this same API, not separate implementations.
 
+The qb-target surface keeps its upstream `PolyZone` dependency. Its zone calls
+return genuine PolyZone-derived objects with the complete public shape API,
+while qbtarget continues to resolve target selection through qblib.
+
+### qb-target drop-in compatibility
+
+Every export in current qb-target is registered: zone/entity/model/bone/global
+registration and label-addressed CRUD, ped spawning, target/NUI controls,
+raycast/state helpers, and outline/bone checks. Options preserve `num` order,
+`required_item`, current three-argument `canInteract`, exact action/event/
+command dispatch payloads, and qb-core job/job-type/gang/item/citizen filters.
+
+Zone calls return PolyZone-compatible objects. Vec2 polygons and unbounded-Z
+zones work, ComboZone accepts live PolyZone objects, EntityZone follows moving
+entities, and `GetZoneData` returns the same object. `RaycastCamera` returns
+`coords, distance, entity, entityType`; `DisableTarget(true)` only cancels the
+current session, while `AllowTargeting(false)` changes the persistent gate.
+
 ### `addEntity(entity, options, defaultDistance?)` / `removeEntity(entity, id?)`
 Targets one or more specific entity handles.
 - `entity: number | number[]`
@@ -194,7 +212,7 @@ Removes a zone-based registration.
 Globally enables/disables the whole targeting loop.
 
 ### `getState()`
-Returns `{ enabled: boolean, hovering: table|nil }`. `hovering` mirrors whatever the tick loop last resolved (`{ kind, id, entity?, zoneId?, optionCount }`), or `nil` when nothing is currently targeted.
+Returns `{ enabled: boolean, active: boolean, success: boolean, hovering: table|nil }`. `hovering` mirrors whatever the tick loop last resolved (`{ kind, id, entity?, zoneId?, optionCount }`), or `nil` when nothing is currently targeted.
 
 ### `runServerAction(name, entity?, maxDistance?, ...)` (client) / `registerServerAction(name, handler)` (server)
 Optional server-action relay with distance revalidation.
@@ -214,7 +232,7 @@ Every `add*`/zone constructor takes an `options` array of:
 ```
 
 ### Opaque `item`/`job`/`gang`/`groups` fields
-An option may also carry `item`, `job`, `gang`, or `groups` fields (accepted so ported `qb-target`/`ox_target` scripts don't error), but **qbtarget never interprets them** — there is no framework installed to check a player's job/gang/inventory against. A ported script that relied on qb-target/ox_target auto-filtering these will show its option to everyone until the consumer supplies its own `canInteract` doing that check itself.
+The native `exports.qbtarget` API accepts these fields but deliberately leaves policy to its caller. The `exports['qb-target']` compatibility surface is different: it enforces `job`, `excludejob`, `jobType`, `excludejobType`, `gang`, `excludegang`, `item`, and `citizenid` through qbcore, then runs the option's own `canInteract`. The ox_target surface does not interpret ox_core `groups` because ox_core is not part of this stack.
 
 ## Config highlights (`config.lua`)
 

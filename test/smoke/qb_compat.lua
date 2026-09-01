@@ -9,7 +9,7 @@ local exportsByEvent = {}
 -- The native resource always loads config.lua first. Keep this focused compat
 -- harness self-contained while state.lua now also reads the global zone-debug
 -- switch during zone registration.
-_G.Config = { target = { debug = false, maxDistance = 10.0 } }
+_G.Config = { target = { debug = false, maxDistance = 10.0, defaultOptionDistance = 2.0, legacyMaxDistance = 7.0 } }
 
 local zoneCalls = {}
 local function makeZoneHandle(opts)
@@ -33,7 +33,28 @@ _G.GetCurrentResourceName = function() return 'qbtarget' end
 _G.GetInvokingResource = function() return 'qb-banking' end
 _G.AddEventHandler = function(name, handler) exportsByEvent[name] = handler end
 _G.joaat = function(value) return value end
-_G.GetEntityCoords = function(entity) return { x = 10, y = 20, z = 30 } end
+local entityCoords = { [99] = { x = 10, y = 20, z = 30 } }
+_G.GetEntityCoords = function(entity) return entityCoords[entity] or { x = 10, y = 20, z = 30 } end
+_G.DoesEntityExist = function() return true end
+_G.NetworkGetEntityIsNetworked = function() return false end
+_G.NetworkGetNetworkIdFromEntity = function(entity) return entity end
+_G.PlayerPedId = function() return 1 end
+_G.GetEntityType = function(entity) return entity == 42 and 3 or 0 end
+_G.GetEntityModel = function() return 100 end
+_G.GetModelDimensions = function()
+    return { x = -1, y = -2, z = -0.5 }, { x = 1, y = 2, z = 1.5 }
+end
+_G.GetOffsetFromEntityGivenWorldCoords = function(entity, x, y, z)
+    local coords = _G.GetEntityCoords(entity)
+    return { x = x - coords.x, y = y - coords.y, z = z - coords.z }
+end
+_G.HasEntityClearLosToEntity = function() return true end
+_G.SetNuiFocus = function() end
+_G.SetNuiFocusKeepInput = function() end
+_G.SetCursorLocation = function() end
+_G.SendNUIMessage = function() end
+_G.IsEntityAPed = function() return false end
+_G.SetEntityDrawOutline = function() end
 
 local requestedModels = {}
 local createdPeds = {}
@@ -123,6 +144,7 @@ end
 
 local addCircleZone = getExport('AddCircleZone')
 local addBoxZone = getExport('AddBoxZone')
+local addPolyZone = getExport('AddPolyZone')
 local addComboZone = getExport('AddComboZone')
 local addEntityZone = getExport('AddEntityZone')
 local removeZone = getExport('RemoveZone')
@@ -139,6 +161,26 @@ local raycastCamera = getExport('RaycastCamera')
 local allowTargeting = getExport('AllowTargeting')
 local disableTarget = getExport('DisableTarget')
 
+harness.test('every current qb-target export is provided', function()
+    for _, name in ipairs({
+        'AddCircleZone', 'AddBoxZone', 'AddPolyZone', 'AddComboZone', 'AddEntityZone', 'RemoveZone',
+        'AddTargetBone', 'RemoveTargetBone', 'AddTargetEntity', 'RemoveTargetEntity',
+        'AddTargetModel', 'RemoveTargetModel', 'AddGlobalType', 'AddGlobalPed', 'AddGlobalVehicle',
+        'AddGlobalObject', 'AddGlobalPlayer', 'RemoveGlobalType', 'RemoveGlobalPed',
+        'RemoveGlobalVehicle', 'RemoveGlobalObject', 'RemoveGlobalPlayer', 'GetGlobalTypeData',
+        'GetZoneData', 'GetTargetBoneData', 'GetTargetEntityData', 'GetTargetModelData',
+        'GetGlobalPedData', 'GetGlobalVehicleData', 'GetGlobalObjectData', 'GetGlobalPlayerData',
+        'UpdateGlobalTypeData', 'UpdateZoneData', 'UpdateTargetBoneData', 'UpdateTargetEntityData',
+        'UpdateTargetModelData', 'UpdateGlobalPedData', 'UpdateGlobalVehicleData',
+        'UpdateGlobalObjectData', 'UpdateGlobalPlayerData', 'DeletePeds', 'SpawnPed',
+        'RemoveSpawnedPed', 'GetPeds', 'UpdatePedsData', 'RaycastCamera', 'DisableNUI', 'EnableNUI',
+        'LeftTarget', 'DisableTarget', 'DrawOutlineEntity', 'CheckEntity', 'CheckBones',
+        'AllowTargeting', 'IsTargetActive', 'IsTargetSuccess',
+    }) do
+        harness.assertTrue(getExport(name) ~= nil, 'missing qb-target export ' .. name)
+    end
+end)
+
 local function opts(label)
     return { options = { { label = label, action = function() end } } }
 end
@@ -152,47 +194,92 @@ harness.test('legacy action callbacks survive the FXServer export boundary', fun
         end,
     })
 
-    local id = addCircleZone('bank-smoke', { x = 0, y = 0, z = 0 }, 1.0, { drawSprite = false }, {
+    local zone = addCircleZone('bank-smoke', { x = 0, y = 0, z = 0 }, 1.0, { drawSprite = false }, {
         options = { { label = 'Open Bank', action = bankAction } },
         distance = 1.5,
     })
 
-    Target.registrations[id].options[1].onSelect(nil)
+    local registration = Target.registrations[zone.ids[1]]
+    registration.options[1].onSelect(nil)
     harness.assertEqual(calls, 1, 'the callable export proxy must dispatch the legacy action')
-    harness.assertTrue(Target.registrations[id].drawSprite == false,
+    harness.assertTrue(registration.drawSprite == false,
         'legacy zones must be able to opt out of the configured location sprite')
 end)
 
-harness.test('AddComboZone registers one qbtarget zone per sub-zone definition', function()
-    local ids = addComboZone('combo-smoke', {
-        { type = 'Box', coords = { x = 0, y = 0, z = 0 }, length = 2.0, width = 2.0 },
-        { type = 'Circle', coords = { x = 5, y = 5, z = 0 }, radius = 1.5 },
-    }, opts('Combo Option'))
+harness.test('legacy zones return PolyZone-compatible objects and vec2 polygons retain unbounded Z', function()
+    local zone = addPolyZone('poly-smoke', {
+        { x = 0, y = 0 }, { x = 2, y = 0 }, { x = 2, y = 2 },
+    }, {}, opts('Poly Option'))
+    local registration = Target.registrations[zone.ids[1]]
+    harness.assertTrue(zone.isPolyZone, 'AddPolyZone must return a zone-compatible object')
+    harness.assertEqual(getExport('GetZoneData')('poly-smoke'), zone, 'GetZoneData must return the same object')
+    harness.assertEqual(registration.distance, 7.0, 'qb-target calls must use its 7m default distance')
+    local nativeOptions = zoneCalls[#zoneCalls]
+    harness.assertEqual(nativeOptions.points[1].z, 0.0, 'vec2 points must be accepted and converted safely')
+    harness.assertEqual(nativeOptions.minZ, -2000.0, 'a poly without minZ must not gain a narrow height limit')
+    harness.assertEqual(nativeOptions.maxZ, 2000.0, 'a poly without maxZ must not gain a narrow height limit')
 
-    harness.assertEqual(#ids, 2, 'AddComboZone must return one id per sub-zone')
-    harness.assertTrue(Target.registrations[ids[1]] ~= nil, 'first combo sub-zone must be registered')
-    harness.assertTrue(Target.registrations[ids[2]] ~= nil, 'second combo sub-zone must be registered')
+    getExport('UpdateZoneData')('poly-smoke', opts('Updated Poly Option'))
+    harness.assertEqual(Target.registrations[zone.ids[1]].options[1].label, 'Updated Poly Option',
+        'UpdateZoneData must update live resolver options')
+end)
+
+harness.test('runtime PolyZone objects retain their public methods and own target cleanup', function()
+    local shapeDestroyed = false
+    _G.BoxZone = {
+        Create = function(_, center)
+            return {
+                center = center,
+                isBoxZone = true,
+                isPointInside = function() return true end,
+                getHeading = function() return 123 end,
+                destroy = function(self) shapeDestroyed = true; self.destroyed = true end,
+            }
+        end,
+    }
+
+    local zone = addBoxZone('real-polyzone-smoke', { x = 1, y = 2, z = 3 }, 2, 2, {}, opts('Real Zone'))
+    _G.BoxZone = nil
+    harness.assertEqual(zone:getHeading(), 123, 'the real PolyZone object method must survive wrapping')
+    harness.assertEqual(getExport('GetZoneData')('real-polyzone-smoke'), zone)
+    local id = zone.ids[1]
+    harness.assertTrue(Target.registrations[id].zoneHandle.contains({ x = 0, y = 0, z = 0 }))
+    zone:destroy()
+    harness.assertTrue(shapeDestroyed, 'destroy must reach the underlying PolyZone object')
+    harness.assertTrue(Target.registrations[id] == nil, 'destroy must also remove the target registration')
+end)
+
+harness.test('AddComboZone registers one qbtarget zone per sub-zone definition', function()
+    local zone = { isPointInside = function() return false end }
+    local combo = addComboZone({ zone, zone }, { name = 'combo-smoke' }, opts('Combo Option'))
+
+    harness.assertTrue(combo.isComboZone, 'AddComboZone must return a zone-compatible object')
+    harness.assertEqual(#combo.ids, 2, 'AddComboZone must retain one id per sub-zone')
+    harness.assertTrue(Target.registrations[combo.ids[1]] ~= nil, 'first combo sub-zone must be registered')
+    harness.assertTrue(Target.registrations[combo.ids[2]] ~= nil, 'second combo sub-zone must be registered')
 end)
 
 harness.test('RemoveZone tears down every sub-zone of a combo registration', function()
-    local ids = addComboZone('combo-remove', {
-        { type = 'Box', coords = { x = 0, y = 0, z = 0 }, length = 1.0, width = 1.0 },
-        { type = 'Box', coords = { x = 1, y = 1, z = 0 }, length = 1.0, width = 1.0 },
-    }, opts('Combo Remove'))
+    local zone = { isPointInside = function() return false end }
+    local combo = addComboZone({ zone, zone }, { name = 'combo-remove' }, opts('Combo Remove'))
 
     local removed = removeZone('combo-remove')
     harness.assertTrue(removed, 'RemoveZone must report success for a combo zone')
-    for _, id in ipairs(ids) do
+    for _, id in ipairs(combo.ids) do
         harness.assertTrue(Target.registrations[id] == nil, 'every combo sub-zone must be torn down')
     end
 end)
 
-harness.test('AddEntityZone snapshots the entity coords into a box zone', function()
-    local id = addEntityZone('entity-zone-smoke', 99, {}, opts('Entity Zone'))
-    local registration = Target.registrations[id]
-    harness.assertTrue(registration ~= nil, 'AddEntityZone must register a zone')
-    harness.assertEqual(registration.kind, 'zone', 'AddEntityZone must produce a zone-kind registration')
-    harness.assertEqual(registration.spriteCoords.x, 10, 'AddEntityZone must snapshot the entity coords')
+harness.test('AddEntityZone follows the entity instead of snapshotting its initial coords', function()
+    local zone = addEntityZone('entity-zone-smoke', 99, {}, opts('Entity Zone'))
+    local registration = Target.registrations[zone.ids[1]]
+    harness.assertTrue(registration ~= nil, 'AddEntityZone must register')
+    harness.assertEqual(registration.kind, 'zone', 'AddEntityZone must retain zone containment semantics')
+    harness.assertTrue(zone:isPointInside({ x = 10, y = 20, z = 100 }),
+        'an EntityZone without useZ must contain points over its current footprint')
+    entityCoords[99] = { x = 50, y = 60, z = 30 }
+    harness.assertFalse(zone:isPointInside({ x = 10, y = 20, z = 30 }), 'the old position must no longer match')
+    harness.assertTrue(zone:isPointInside({ x = 50, y = 60, z = 30 }), 'the moved entity position must match')
 end)
 
 harness.test('RemoveGlobalPed/Vehicle/Object/Player forward to Target.removeGlobalType', function()
@@ -203,10 +290,10 @@ harness.test('RemoveGlobalPed/Vehicle/Object/Player forward to Target.removeGlob
     harness.assertFalse(removeGlobalPlayer(), 'RemoveGlobalPlayer is a no-op with nothing registered')
 end)
 
-harness.test('RemoveTargetBone forwards to Target.removeGlobalBone', function()
+harness.test('RemoveTargetBone accepts bone names and optional labels', function()
     local id = addTargetBone({ 'boot' }, opts('Bone Option'))
     harness.assertTrue(Target.registrations[id] ~= nil, 'AddTargetBone must register')
-    harness.assertTrue(removeTargetBone(id), 'RemoveTargetBone must remove the bone registration')
+    harness.assertTrue(removeTargetBone('boot', 'Bone Option'), 'RemoveTargetBone must remove the labeled option')
     harness.assertTrue(Target.registrations[id] == nil, 'the bone registration must be gone after removal')
 end)
 
@@ -266,24 +353,44 @@ harness.test('SpawnPed supports qb-taxijob config and registers its entity targe
         'RemoveSpawnedPed must tear down the ped target registration')
 end)
 
-harness.test('RaycastCamera reorders qbtarget raycast results to (entityHit, coords, hit, surfaceNormal)', function()
-    local entityHit, coords, hit, surfaceNormal = raycastCamera()
-    harness.assertEqual(entityHit, 42, 'entityHit must be the first return value')
-    harness.assertEqual(coords.x, 1, 'coords must be the second return value')
-    harness.assertTrue(hit, 'hit must be the third return value')
-    harness.assertEqual(surfaceNormal.z, 1, 'surfaceNormal must be the fourth return value')
+harness.test('RaycastCamera matches qb-target return order and shapes', function()
+    local coords, distance, entityHit, entityType = raycastCamera(nil, { x = 1, y = 2, z = 0 })
+    harness.assertEqual(coords.x, 1, 'end coords must be first')
+    harness.assertEqual(distance, 3, 'distance must be measured from playerCoords')
+    harness.assertEqual(entityHit, 42, 'entity handle must be third')
+    harness.assertEqual(entityType, 3, 'entity type must be fourth')
 end)
 
-harness.test('AllowTargeting/DisableTarget drive Target.setEnabled with opposite polarity', function()
+harness.test('AllowTargeting and forced DisableTarget match upstream polarity', function()
     allowTargeting(false)
     harness.assertFalse(Target.enabled, 'AllowTargeting(false) must disable targeting')
     allowTargeting(true)
     harness.assertTrue(Target.enabled, 'AllowTargeting(true) must enable targeting')
 
     disableTarget(true)
-    harness.assertFalse(Target.enabled, 'DisableTarget(true) must disable targeting')
+    harness.assertTrue(Target.enabled, 'DisableTarget(true) cancels only the current session')
+    harness.assertFalse(Target.active, 'DisableTarget(true) must clear active targeting state')
     disableTarget(false)
-    harness.assertTrue(Target.enabled, 'DisableTarget(false) must re-enable targeting')
+    harness.assertTrue(Target.enabled, 'DisableTarget(false) is an upstream no-op')
+end)
+
+harness.test('entity/model options support label-addressed get, update, and removal', function()
+    local addEntity = getExport('AddTargetEntity')
+    local getEntity = getExport('GetTargetEntityData')
+    local updateEntity = getExport('UpdateTargetEntityData')
+    local removeEntity = getExport('RemoveTargetEntity')
+    addEntity(77, { options = {
+        { label = 'Keep', action = function() end },
+        { label = 'Replace', action = function() end },
+    }, distance = 3.0 })
+    harness.assertEqual(getEntity(77, 'Replace').label, 'Replace')
+    updateEntity(77, 'Replace', { label = 'Replace', icon = 'new', action = function() end })
+    harness.assertEqual(getEntity(77, 'Replace').icon, 'new')
+    updateEntity(77, 'Added', { label = 'Added', icon = 'plus', action = function() end })
+    harness.assertEqual(getEntity(77, 'Added').icon, 'plus', 'upstream setters add a missing label')
+    harness.assertTrue(removeEntity(77, 'Replace'))
+    harness.assertTrue(getEntity(77, 'Replace') == nil)
+    harness.assertTrue(getEntity(77, 'Keep') ~= nil, 'labeled removal must preserve sibling options')
 end)
 
 -- job/gang/item/jobType enforcement -- confirmed broken before this fix
@@ -297,10 +404,10 @@ end)
 local filterSmokeCounter = 0
 local function addOptionAndCheck(option)
     filterSmokeCounter = filterSmokeCounter + 1
-    local id = addBoxZone('filter-smoke-' .. filterSmokeCounter, { x = 0, y = 0, z = 0 }, 1, 1, {}, {
+    local zone = addBoxZone('filter-smoke-' .. filterSmokeCounter, { x = 0, y = 0, z = 0 }, 1, 1, {}, {
         options = { option },
     })
-    return Target.registrations[id].options[1].canInteract(nil, 0, {})
+    return Target.registrations[zone.ids[1]].options[1].canInteract(nil, 0, {})
 end
 
 harness.test('a job filter denies a player in the wrong job', function()

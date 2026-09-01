@@ -17,6 +17,11 @@ Config.target = {
 
     maxDistance = 10.0,            -- meters; QB.raycast.fromCamera's max reach while the hold key is down
     defaultOptionDistance = 2.5,   -- meters; fallback per-option interact distance when nothing more specific is set
+    legacyMaxDistance = 7.0,       -- qb-target Config.MaxDistance default used only by the qb-target compatibility surface
+    legacyOutline = {              -- mirrors current qb-target's outline defaults
+        enabled = false,
+        colour = { 255, 255, 255, 255 },
+    },
     boneTolerance = 0.35,          -- meters; how close a raycast hit must land to a candidate bone to count as a match
 
     -- Adaptive target-loop cadence. A scan happens immediately when targeting

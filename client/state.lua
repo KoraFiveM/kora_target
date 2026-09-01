@@ -23,6 +23,8 @@ Target.byGlobalBone = {}   -- id -> {boneNames}
 Target.byZone = {}         -- id -> true, every zone-kind registration id (client/loop.lua tests zoneHandle.contains(hitCoords) against each)
 Target.enabled = true
 Target.hovering = nil      -- maintained by client/loop.lua each tick
+Target.active = false      -- true while the targeting key/toggle is active
+Target.success = false     -- true while at least one candidate is resolved
 -- Tracks only the qbtarget_debug command's own on/off state (client/loop.lua)
 -- so its no-arg toggle has something local to flip against -- separate from
 -- Config.target.debug, which stays the creation-time default and is never
@@ -133,6 +135,23 @@ local function validateOptions(options)
     end
 
     return options
+end
+
+---Internal compatibility hook: atomically replaces a live registration's
+---options/default distance and invalidates the resolver caches. It is kept off
+---client/exports.lua; qb-target's labeled remove/update API needs option-level
+---mutation while qbtarget's native public API remains registration-oriented.
+---@param id integer
+---@param options QBTargetOption[]
+---@param defaultDistance? number
+---@return boolean updated
+function Target._replaceOptions(id, options, defaultDistance)
+    local registration = Target.registrations[id]
+    if not registration then return false end
+    registration.options = validateOptions(options)
+    registration.distance = defaultDistance
+    touchRegistrations()
+    return true
 end
 
 local function addToIndex(index, key, id)
@@ -597,6 +616,42 @@ function Target.addPolyZone(zoneOptions)
     return id
 end
 
+---Internal compatibility constructor for a zone supplied by another resource
+---(notably qb-target AddComboZone's PolyZone objects). The native qbtarget API
+---stays limited to validated qblib shapes; the bridge only needs a contains
+---predicate and uses the same ownership/removal/cache machinery as native
+---zones.
+---@param contains fun(point: any): boolean
+---@param options QBTargetOption[]
+---@param defaultDistance? number
+---@param spriteCoords? any
+---@param drawSprite? boolean
+---@return integer id
+function Target._addCustomZone(contains, options, defaultDistance, spriteCoords, drawSprite)
+    assert(isCallable(contains), 'custom zone contains must be callable.')
+    options = validateOptions(options)
+    local id = nextId()
+    local owner = GetInvokingResource() or GetCurrentResourceName()
+    local removed = false
+    local zoneHandle = {
+        contains = contains,
+        remove = function() removed = true end,
+    }
+    Target.registrations[id] = {
+        id = id,
+        kind = 'zone',
+        options = options,
+        distance = defaultDistance,
+        zoneHandle = zoneHandle,
+        spriteCoords = spriteCoords,
+        drawSprite = spriteCoords ~= nil and drawSprite ~= false,
+    }
+    Target.byZone[id] = true
+    touchRegistrations()
+    Target.ownership.track(owner, id)
+    return id
+end
+
 ---@param id integer
 ---@return boolean removed
 function Target.removeZone(id)
@@ -611,11 +666,21 @@ end
 function Target.setEnabled(enabled)
     assert(type(enabled) == "boolean", "enabled must be a boolean.")
     Target.enabled = enabled
+    if not enabled then
+        Target.active = false
+        Target.success = false
+        Target.hovering = nil
+    end
 end
 
 ---@return table state `{enabled: boolean, hovering: table|nil}` -- `hovering` mirrors whatever client/loop.lua last resolved under the crosshair/inside a zone, or nil when nothing is targeted.
 function Target.getState()
-    return { enabled = Target.enabled, hovering = Target.hovering }
+    return {
+        enabled = Target.enabled,
+        active = Target.active,
+        success = Target.success,
+        hovering = Target.hovering,
+    }
 end
 
 ---Runs a server-registered action (see server/server.lua's

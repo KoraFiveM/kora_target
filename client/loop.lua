@@ -20,9 +20,20 @@ end
 
 local function resetRuntimeState()
     currentCandidates, Target.hovering = {}, nil
+    Target.success = false
     entityRegistrationCache.key, entityRegistrationCache.revision, entityRegistrationCache.registrations = nil, nil, {}
     canInteractCache = {}
     if syncTargetHud then syncTargetHud(false) end
+end
+
+-- Internal compatibility hook for qb-target's DisableTarget(true). That
+-- export cancels only the current targeting session; it does not change the
+-- persistent AllowTargeting gate. Keeping this separate from setEnabled is
+-- what lets the next key press start a fresh session, as upstream does.
+function Target._cancelCurrentTargeting()
+    holding = false
+    resetRuntimeState()
+    Target.active = false
 end
 
 local function classifyEntity(entity)
@@ -187,7 +198,11 @@ local function resolveCandidates(hit, entity, hitCoords, now)
     end
     if hit and hitCoords then
         for _, registration in ipairs(zoneRegistrationsAt(hitCoords)) do
-            nearestIndex = appendCandidates(candidates, nearestIndex, registration, nil, hitCoords, pedCoords, now, boneCache)
+            -- qb-target passes the raycast entity through zone canInteract /
+            -- action payloads as well; it may be nil/0 when the zone point is
+            -- world geometry.
+            nearestIndex = appendCandidates(candidates, nearestIndex, registration,
+                entity and entity ~= 0 and entity or nil, hitCoords, pedCoords, now, boneCache)
         end
     end
     -- Keep the closest candidate first without sorting every option.
@@ -217,6 +232,7 @@ end
 
 local function updateHoveringState(candidates)
     local top = candidates[1]
+    Target.success = top ~= nil
     if not top then Target.hovering = nil; return end
     local previous = Target.hovering
     if previous and previous.id == top.registration.id and previous.entity == top.entity and previous.option == top.option then return end
@@ -284,6 +300,7 @@ end
 local function startTargeting()
     if holdingThread then return end
     holdingThread = true
+    Target.active = Target.enabled
     resetRuntimeState()
     syncTargetHud(true, currentCandidates)
     diagnostics.lastReport = GetGameTimer()
@@ -292,9 +309,11 @@ local function startTargeting()
         while holding do
             local now = GetGameTimer()
             if not Target.enabled or menuOpen then
+                Target.active = false
                 resetRuntimeState()
                 Wait(Config.target.tickIdle)
             else
+                Target.active = true
                 local startedAt = now
                 diagnostics.raycasts = diagnostics.raycasts + 1
                 local hit, hitCoords, entity = raycastTarget()
@@ -308,6 +327,7 @@ local function startTargeting()
             end
         end
         resetRuntimeState()
+        Target.active = false
         holdingThread = false
     end)
 end
@@ -330,6 +350,7 @@ QB.keybind.add({
         else
             local candidates = currentCandidates
             resetRuntimeState()
+            Target.active = false
             selectCandidates(candidates)
         end
     end,
@@ -338,6 +359,7 @@ QB.keybind.add({
         holding = false
         local candidates = currentCandidates
         resetRuntimeState()
+        Target.active = false
         selectCandidates(candidates)
     end,
 })
