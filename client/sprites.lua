@@ -61,20 +61,50 @@ local function drawZoneSprites()
     return drewAny
 end
 
--- A dedicated visual loop is deliberately independent from target mode. It
--- idles at 500ms when sprites are disabled/out of range and only runs every
--- frame while it has a nearby zone to draw; this keeps target visibility from
--- adding raycasts, pool scans, or per-frame work at normal distances.
-CreateThread(function()
-    while true do
-        local drewAny = drawZoneSprites()
-        Wait(drewAny and 0 or 500)
+local function hasSpriteEnabledZone()
+    local settings = Config.target.sprites
+    if not settings or not settings.enabled then return false end
+
+    for id in pairs(Target.byZone) do
+        local registration = Target.registrations[id]
+        if registration and registration.drawSprite ~= false and registration.spriteCoords then
+            return true
+        end
     end
-end)
+
+    return false
+end
+
+local spriteThreadRunning = false
+
+-- Zone registration calls this hook after adding a coordinate-backed target.
+-- There is no worker at all while sprites are disabled or every zone opted out.
+function Target._syncSpriteLoop()
+    if spriteThreadRunning or not hasSpriteEnabledZone() then return false end
+    spriteThreadRunning = true
+
+    CreateThread(function()
+        while hasSpriteEnabledZone() do
+            local drewAny = drawZoneSprites()
+            Wait(drewAny and 0 or 500)
+        end
+
+        spriteThreadRunning = false
+        -- Close the tiny race where a new zone is registered after the loop's
+        -- final predicate check but before the running flag is cleared.
+        Target._syncSpriteLoop()
+    end)
+
+    return true
+end
+
+Target._syncSpriteLoop()
 
 if Config.target.testMode then
     Target._testSprites = {
         canDraw = canDrawSprite,
+        hasEnabledZone = hasSpriteEnabledZone,
+        isRunning = function() return spriteThreadRunning end,
         squaredDistance = squaredDistance,
     }
 end

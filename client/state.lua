@@ -170,6 +170,10 @@ local function removeFromIndex(index, key, id)
     if next(set) == nil then index[key] = nil end
 end
 
+local function syncSpriteLoop()
+    if Target._syncSpriteLoop then Target._syncSpriteLoop() end
+end
+
 ---Every id still owned by `id` collected into a plain array before any of
 ---them are torn down -- destroyRegistration mutates the very index tables
 ---these ids are read from, so walking `pairs(set)` while destroying entries
@@ -520,6 +524,7 @@ function Target.addBoxZone(zoneOptions)
         drawSprite = zoneOptions.drawSprite ~= false,
     }
     Target.byZone[id] = true
+    syncSpriteLoop()
     touchRegistrations()
     Target.ownership.track(owner, id)
 
@@ -562,6 +567,7 @@ function Target.addSphereZone(zoneOptions)
         drawSprite = zoneOptions.drawSprite ~= false,
     }
     Target.byZone[id] = true
+    syncSpriteLoop()
     touchRegistrations()
     Target.ownership.track(owner, id)
 
@@ -610,6 +616,7 @@ function Target.addPolyZone(zoneOptions)
         drawSprite = zoneOptions.drawSprite ~= false,
     }
     Target.byZone[id] = true
+    syncSpriteLoop()
     touchRegistrations()
     Target.ownership.track(owner, id)
 
@@ -647,6 +654,7 @@ function Target._addCustomZone(contains, options, defaultDistance, spriteCoords,
         drawSprite = spriteCoords ~= nil and drawSprite ~= false,
     }
     Target.byZone[id] = true
+    syncSpriteLoop()
     touchRegistrations()
     Target.ownership.track(owner, id)
     return id

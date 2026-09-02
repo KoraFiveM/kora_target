@@ -82,6 +82,36 @@ dofile(resourceRoot .. 'client/loop.lua')
 local runtime = Target._testRuntime
 local sprites = Target._testSprites
 
+harness.test('sprite worker is lazy and requires a sprite-enabled zone', function()
+    harness.assertTrue(not sprites.isRunning(), 'loading qbtarget with no zones must not create a sprite worker')
+
+    local previousEnabled = Config.target.sprites.enabled
+    Config.target.sprites.enabled = false
+    local disabledId = Target.addSphereZone({
+        coords = { x = 1, y = 1, z = 1 }, radius = 1.0,
+        options = {{ label = 'Disabled sprite', onSelect = function() end }},
+    })
+    harness.assertTrue(not sprites.isRunning(), 'globally disabled sprites must not create a worker')
+    Target.removeZone(disabledId)
+
+    Config.target.sprites.enabled = true
+    local optedOutId = Target.addSphereZone({
+        coords = { x = 1, y = 1, z = 1 }, radius = 1.0, drawSprite = false,
+        options = {{ label = 'Opted-out sprite', onSelect = function() end }},
+    })
+    harness.assertTrue(not sprites.isRunning(), 'zones that opt out must not create a worker')
+    Target.removeZone(optedOutId)
+
+    local enabledId = Target.addSphereZone({
+        coords = { x = 1, y = 1, z = 1 }, radius = 1.0,
+        options = {{ label = 'Enabled sprite', onSelect = function() end }},
+    })
+    harness.assertTrue(sprites.isRunning(), 'the first sprite-enabled zone should start the worker')
+    Target.removeZone(enabledId)
+    harness.assertTrue(not sprites.hasEnabledZone(), 'removing the last enabled zone should make the worker terminate')
+    Config.target.sprites.enabled = previousEnabled
+end)
+
 harness.test('target registration mutations invalidate the aim cache', function()
     local first = runtime.entityRegistrations(99)
     local revision = Target.registrationRevision

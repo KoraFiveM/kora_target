@@ -204,6 +204,9 @@ a small, distance-culled `shared/info` world sprite at each coordinate-zone
 anchor. Set `drawSprite = false` on a zone to suppress its icon. This visual
 loop never raycasts or scans the entity pool; model/entity/global targets have
 no single stable anchor and therefore intentionally do not get static sprites.
+The sprite worker is created lazily for the first sprite-enabled coordinate
+zone and terminates after the last such zone is removed; globally disabled
+sprites or an all-opted-out zone set create no worker.
 
 ### `removeZone(id)`
 Removes a zone-based registration.
