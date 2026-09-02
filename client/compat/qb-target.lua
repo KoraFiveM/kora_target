@@ -381,9 +381,9 @@ end
 -- of their public methods) while attaching qbtarget registration lifecycle.
 -- The plain-Lua smoke harness has no PolyZone globals and exercises the exact
 -- standalone predicates below instead.
-local function trackPolyZoneObject(name, kind, zone, targetOptions, distance, spriteCoords, drawSprite)
+local function trackPolyZoneObject(name, kind, zone, targetOptions, distance, spriteCoords, drawSprite, bounds)
     local id = Target._addCustomZone(function(point) return zone:isPointInside(point) end,
-        translateOptions(optionsMap(targetOptions.options, distance)), distance, spriteCoords, drawSprite)
+        translateOptions(optionsMap(targetOptions.options, distance)), distance, spriteCoords, drawSprite, bounds)
     local shapeDestroy = zone.destroy
     zone.name, zone.kind, zone.ids = name, kind, { id }
     zone.targetoptions = targetOptions
@@ -406,6 +406,46 @@ end
 -- instead of duplicating it. These do NOT touch zonesByName -- only the
 -- public Add*Zone wrappers below do that, since a combo zone's bookkeeping
 -- differs (one name maps to several ids, see AddComboZone).
+-- Broad-phase bounds for the PolyZone-object path (trackPolyZoneObject).
+-- Derived from the CALLER'S OWN arguments rather than read back off the
+-- constructed PolyZone object: PolyZone's `scale`/`offset` grow a box beyond
+-- the length/width it was created with, and an AABB that missed that growth
+-- would silently hide the zone from the resolver. When those are present the
+-- bound is simply not derived and the zone stays in the unindexed scan --
+-- slower, never wrong. See Target._zoneBounds in client/state.lua.
+local function legacyBoxBounds(center, length, width, boxOpts)
+    if boxOpts.scale or boxOpts.offset then return nil end
+    -- A heading rotates the rectangle in place, so the circumradius of its
+    -- half-extents encloses it at ANY heading without needing to know one.
+    local halfLength, halfWidth = length / 2, width / 2
+    local extent = math.sqrt(halfLength * halfLength + halfWidth * halfWidth)
+
+    return Target._zoneBounds(center.x, center.y, extent, extent, boxOpts.minZ, boxOpts.maxZ)
+end
+
+local function legacyCircleBounds(center, radius, boxOpts)
+    -- PolyZone's CircleZone is an infinite vertical cylinder unless useZ.
+    local minZ, maxZ
+    if boxOpts.useZ == true then minZ, maxZ = center.z - radius, center.z + radius end
+
+    return Target._zoneBounds(center.x, center.y, radius, radius, minZ, maxZ)
+end
+
+local function legacyPolyBounds(points, boxOpts)
+    local minX, maxX, minY, maxY = math.huge, -math.huge, math.huge, -math.huge
+    for i = 1, #points do
+        local point = points[i]
+        if point.x < minX then minX = point.x end
+        if point.x > maxX then maxX = point.x end
+        if point.y < minY then minY = point.y end
+        if point.y > maxY then maxY = point.y end
+    end
+    if minX > maxX then return nil end
+
+    return Target._zoneBounds((minX + maxX) / 2, (minY + maxY) / 2,
+        (maxX - minX) / 2, (maxY - minY) / 2, boxOpts.minZ, boxOpts.maxZ)
+end
+
 local function boxScaleOffset(boxOpts)
     local scale = boxOpts.scale or { 1.0, 1.0, 1.0 }
     local offset = boxOpts.offset or { 0.0, 0.0, 0.0 }
@@ -440,13 +480,22 @@ local function makeBoxZone(coords, length, width, boxOpts, targetOptions)
         end
         if minZ ~= nil then minZ = minZ - offset[6] end
         if maxZ ~= nil then maxZ = maxZ + offset[5] end
+        -- The predicate below tests the SCALED/OFFSET local rectangle, so its
+        -- broad-phase bound has to come from those same numbers rather than
+        -- from the caller's width/length. Asymmetric scale/offset can push the
+        -- rectangle off `coords`, and a heading rotates it, so take the
+        -- circumradius of the furthest corner about coords -- conservative at
+        -- every heading. See Target._zoneBounds in client/state.lua.
+        local reachX, reachY = math.max(-minX, maxX), math.max(-minY, maxY)
+        local extent = math.sqrt(reachX * reachX + reachY * reachY)
         return Target._addCustomZone(function(point)
             local dx, dy = point.x - coords.x, point.y - coords.y
             local localX = dx * cosR + dy * sinR
             local localY = -dx * sinR + dy * cosR
             if localX < minX or localX > maxX or localY < minY or localY > maxY then return false end
             return (minZ == nil or point.z >= minZ) and (maxZ == nil or point.z <= maxZ)
-        end, translateOptions(mapped), distance, coords, boxOpts.drawSprite)
+        end, translateOptions(mapped), distance, coords, boxOpts.drawSprite,
+        Target._zoneBounds(coords.x, coords.y, extent, extent, minZ, maxZ))
     end
 
     local minZ = boxOpts.minZ or -2000.0
@@ -488,7 +537,8 @@ local function makeCircleZone(coords, radius, boxOpts, targetOptions)
     return Target._addCustomZone(function(point)
         local dx, dy = point.x - coords.x, point.y - coords.y
         return dx * dx + dy * dy < radiusSq
-    end, translateOptions(mapped), distance, coords, boxOpts.drawSprite)
+    end, translateOptions(mapped), distance, coords, boxOpts.drawSprite,
+    Target._zoneBounds(coords.x, coords.y, radius, radius))
 end
 
 local function makePolyZone(points, boxOpts, targetOptions)
@@ -530,7 +580,8 @@ local function AddBoxZone(name, coords, length, width, boxOpts, targetOptions)
         local distance = legacyDistance(targetOptions.distance)
         targetOptions.distance = distance
         return trackPolyZoneObject(name, 'box', BoxZone:Create(center, length, width, boxOpts),
-            targetOptions, distance, center, boxOpts.drawSprite)
+            targetOptions, distance, center, boxOpts.drawSprite,
+            legacyBoxBounds(center, length, width, boxOpts))
     end
     local id = makeBoxZone(coords, length, width, boxOpts, targetOptions)
     return legacyZone(name, 'box', { id }, targetOptions, {
@@ -550,7 +601,8 @@ local function AddCircleZone(name, coords, radius, boxOpts, targetOptions)
         local distance = legacyDistance(targetOptions.distance)
         targetOptions.distance = distance
         return trackPolyZoneObject(name, 'circle', CircleZone:Create(center, radius, boxOpts),
-            targetOptions, distance, center, boxOpts.drawSprite)
+            targetOptions, distance, center, boxOpts.drawSprite,
+            legacyCircleBounds(center, radius, boxOpts))
     end
     local id = makeCircleZone(coords, radius, boxOpts, targetOptions)
     return legacyZone(name, 'circle', { id }, targetOptions, {
@@ -571,7 +623,8 @@ local function AddPolyZone(name, points, boxOpts, targetOptions)
         local anchorZ = boxOpts.minZ and boxOpts.maxZ and (boxOpts.minZ + boxOpts.maxZ) / 2
             or points[1].z or 0.0
         local spriteCoords = { x = zone.center.x, y = zone.center.y, z = anchorZ }
-        return trackPolyZoneObject(name, 'poly', zone, targetOptions, distance, spriteCoords, boxOpts.drawSprite)
+        return trackPolyZoneObject(name, 'poly', zone, targetOptions, distance, spriteCoords, boxOpts.drawSprite,
+            legacyPolyBounds(points, boxOpts))
     end
     local id = makePolyZone(points, boxOpts, targetOptions)
     return legacyZone(name, 'poly', { id }, targetOptions, {

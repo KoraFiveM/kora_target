@@ -7,7 +7,7 @@ local harness = require('harness')
 
 local now, canInteractCalls, boneReads = 0, 0, 0
 local commands = {}
-local raycastResponses, raycastFlags = {}, {}
+local raycastResponses, raycastFlags, raycastProbes = {}, {}, {}
 local zoneHandles, zoneCalls = {}, {}
 
 -- Mirrors qblib's own zone handle shape (client/state.lua only relies on
@@ -36,11 +36,20 @@ _G.QB = {
         setDebug = function(id, enabled) setDebugCalls[#setDebugCalls + 1] = { id, enabled } end,
     },
     drawing = { text3d = function() end },
-    raycast = { fromCamera = function(_, flags)
-        raycastFlags[#raycastFlags + 1] = flags
-        local response = table.remove(raycastResponses, 1) or { false }
-        return table.unpack(response)
-    end },
+    -- client/loop.lua starts both probes before awaiting either (so the
+    -- engine settles them in the same frame), so the stub has to model a
+    -- handle: flags are recorded at START time and the queued response is
+    -- claimed then, not when the caller gets round to awaiting it.
+    raycast = {
+        startFromCamera = function(_, flags)
+            raycastFlags[#raycastFlags + 1] = flags
+            raycastProbes[#raycastProbes + 1] = table.remove(raycastResponses, 1) or { false }
+            return #raycastProbes
+        end,
+        await = function(handle)
+            return table.unpack(raycastProbes[handle])
+        end,
+    },
     nui = { send = function() end },
     callback = { trigger = function() end },
     keybind = {
@@ -61,6 +70,12 @@ _G.RegisterKeyMapping = function() end
 _G.GetGameTimer = function() return now end
 _G.PlayerPedId = function() return 1 end
 _G.GetEntityCoords = function() return { x = 0, y = 0, z = 0 } end
+_G.GetGameplayCamCoord = function() return { x = 0, y = 0, z = 0 } end
+_G.GetGameplayCamRot = function() return { x = 0, y = 0, z = 0 } end
+_G.GetScreenCoordFromWorldCoord = function() return false, 0, 0 end
+_G.DrawSprite = function() end
+_G.RequestStreamedTextureDict = function() end
+_G.HasStreamedTextureDictLoaded = function() return true end
 _G.GetEntityModel = function() return 123 end
 _G.DoesEntityExist = function() return true end
 _G.GetEntityType = function() return 1 end
@@ -214,7 +229,7 @@ harness.test('reset clears stale hover and candidates before a menu or stop', fu
 end)
 
 harness.test('entity-focused fallback raycast finds a target when the broad cast misses', function()
-    raycastFlags, raycastResponses = {}, {
+    raycastFlags, raycastProbes, raycastResponses = {}, {}, {
         { false, nil, nil },
         { true, { x = 1, y = 0, z = 0 }, 99 },
     }
@@ -323,6 +338,140 @@ harness.test('qbtarget_debug command toggles every target zone through QB.zones.
     harness.assertEqual(setDebugCalls[5][2], false, "'off' should disable debug regardless of the current state")
 
     Target.debugEnabled = false
+end)
+
+-- ---------------------------------------------------------------------------
+-- Resolver broad phase. Every test below starts from a clean zone fixture:
+-- the tests above leave zones registered, and these assert on exactly which
+-- `contains` predicates the resolver reaches.
+-- ---------------------------------------------------------------------------
+local function clearZones()
+    local ids = {}
+    for id in pairs(Target.byZone) do ids[#ids + 1] = id end
+    for _, id in ipairs(ids) do Target.destroyRegistration(id) end
+end
+
+local function trackedZone(coords, size, distance, result, rotation)
+    local calls = 0
+    local id = Target.addBoxZone({
+        coords = coords, size = size, distance = distance, rotation = rotation,
+        options = {{ label = 'Tracked', onSelect = function() end }},
+    })
+    zoneHandles[#zoneHandles].contains = function() calls = calls + 1; return result end
+    return id, function() return calls end
+end
+
+harness.test('the aim-point grid keeps far zones away from their contains predicate', function()
+    clearZones()
+    local _, farCalls = trackedZone({ x = 500, y = 500, z = 0 }, { x = 2, y = 2, z = 2 }, 10, true)
+    local _, nearCalls = trackedZone({ x = 3, y = 0, z = 0 }, { x = 2, y = 2, z = 2 }, 10, true)
+
+    local matched = runtime.zoneRegistrationsAt({ x = 3, y = 0, z = 0 }, { x = 0, y = 0, z = 0 })
+    harness.assertEqual(#matched, 1, 'only the zone whose bounds contain the aim point should match')
+    harness.assertEqual(nearCalls(), 1, 'the zone under the crosshair must still be tested exactly')
+    harness.assertEqual(farCalls(), 0, 'a zone 700m away must never reach its contains predicate')
+end)
+
+harness.test('a rotated box is bounded by its circumradius, not its axis-aligned size', function()
+    clearZones()
+    -- Rotated 45 degrees, a 4x1 box reaches ~1.77m along both axes -- the
+    -- unrotated AABB would stop at 0.5m on Y and wrongly reject this point.
+    local _, calls = trackedZone({ x = 0, y = 0, z = 0 }, { x = 4, y = 1, z = 2 }, 10, true, 45)
+
+    local matched = runtime.zoneRegistrationsAt({ x = 1.2, y = 1.2, z = 0 }, { x = 0, y = 0, z = 0 })
+    harness.assertEqual(calls(), 1, 'a point inside the rotation-safe bound must reach the real predicate')
+    harness.assertEqual(#matched, 1, 'and be reported as a candidate')
+end)
+
+harness.test('an aim point beyond every zone option distance skips the zone pass entirely', function()
+    clearZones()
+    local _, calls = trackedZone({ x = 9, y = 0, z = 0 }, { x = 2, y = 2, z = 2 }, 2.5, true)
+
+    -- Zone candidates anchor on the raycast hit, so ped->hit distance is the
+    -- distance appendCandidates would test for EVERY zone -- 9m against a
+    -- 2.5m option can never produce a candidate, whatever contains says.
+    harness.assertEqual(#runtime.zoneRegistrationsAt({ x = 9, y = 0, z = 0 }, { x = 0, y = 0, z = 0 }), 0,
+        'an out-of-reach aim point must produce no zone candidates')
+    harness.assertEqual(calls(), 0, 'and must not run a single contains predicate to find that out')
+
+    harness.assertEqual(#runtime.zoneRegistrationsAt({ x = 9, y = 0, z = 0 }), 1,
+        'without a ped position there is nothing to measure reach against, so the pass still runs')
+    harness.assertEqual(calls(), 1, 'the exact predicate runs once in that case')
+end)
+
+harness.test('a custom zone with no derivable bounds is always scanned', function()
+    clearZones()
+    local calls = 0
+    Target._addCustomZone(function() calls = calls + 1; return true end,
+        {{ label = 'Combo-like', onSelect = function() end }}, 10)
+
+    local matched = runtime.zoneRegistrationsAt({ x = 4000, y = -4000, z = 0 }, { x = 4000, y = -4000, z = 0 })
+    harness.assertEqual(calls, 1, 'an unbounded predicate must still be consulted wherever the player aims')
+    harness.assertEqual(#matched, 1, 'and must still be able to match')
+end)
+
+harness.test('compat bounds cover a scaled qb-target box', function()
+    clearZones()
+    local calls = 0
+    -- Mirrors client/compat/qb-target.lua's scaled-box branch: the predicate
+    -- covers the SCALED rectangle, so the bound it registers must too.
+    Target._addCustomZone(function() calls = calls + 1; return true end,
+        {{ label = 'Scaled', onSelect = function() end }}, 10, nil, false,
+        Target._zoneBounds(0, 0, 5, 5))
+
+    harness.assertEqual(#runtime.zoneRegistrationsAt({ x = 4.5, y = 0, z = 0 }, { x = 0, y = 0, z = 0 }), 1,
+        'a point inside the declared bound must reach the predicate')
+    harness.assertEqual(#runtime.zoneRegistrationsAt({ x = 5.5, y = 0, z = 0 }, { x = 0, y = 0, z = 0 }), 0,
+        'a point outside it must be rejected without calling the predicate')
+    harness.assertEqual(calls, 1, 'exactly one predicate call across both queries')
+end)
+
+harness.test('sprite-enabled zones are counted rather than re-walked', function()
+    clearZones()
+    harness.assertFalse(Target.hasSpriteZone(), 'no zones means no sprite work')
+
+    local first = Target.addSphereZone({ coords = { x = 0, y = 0, z = 0 }, radius = 1.0,
+        options = {{ label = 'Sprite', onSelect = function() end }} })
+    local second = Target.addSphereZone({ coords = { x = 0, y = 0, z = 0 }, radius = 1.0, drawSprite = false,
+        options = {{ label = 'No sprite', onSelect = function() end }} })
+
+    harness.assertTrue(Target.hasSpriteZone(), 'a drawing zone should register in the counter')
+    Target.destroyRegistration(second)
+    harness.assertTrue(Target.hasSpriteZone(), 'removing an opted-out zone must not decrement it')
+    Target.destroyRegistration(first)
+    harness.assertFalse(Target.hasSpriteZone(), 'removing the last drawing zone should clear it')
+end)
+
+harness.test('a motionless camera and ped let a tick reuse the previous resolve, but only briefly', function()
+    local camX, pitch = 0.0, 0.0
+    _G.GetGameplayCamCoord = function() return { x = camX, y = 0, z = 0 } end
+    _G.GetGameplayCamRot = function() return { x = pitch, y = 0, z = 0 } end
+
+    runtime.resetRuntimeState()
+    now = 1000
+    harness.assertFalse(runtime.aimIsStatic(now), 'the first tick of a hold has nothing to reuse')
+    runtime.resolveCandidates(false, nil, nil, now)
+
+    now = 1010
+    harness.assertTrue(runtime.aimIsStatic(now), 'an unchanged camera and ped can reuse the last scan')
+
+    pitch = 0.0001
+    now = 1020
+    harness.assertFalse(runtime.aimIsStatic(now), 'the smallest aim change must resolve immediately')
+    runtime.resolveCandidates(false, nil, nil, now)
+
+    now = 1030
+    harness.assertTrue(runtime.aimIsStatic(now), 'holding still again resumes reuse')
+
+    now = 1020 + Config.target.staticRefresh
+    harness.assertFalse(runtime.aimIsStatic(now),
+        'staticRefresh caps how long a frozen crosshair can go without a real scan')
+
+    local previous = Config.target.staticRefresh
+    Config.target.staticRefresh = 0
+    now = now + 1
+    harness.assertFalse(runtime.aimIsStatic(now), 'staticRefresh = 0 disables reuse entirely')
+    Config.target.staticRefresh = previous
 end)
 
 harness.report('qbtarget runtime')

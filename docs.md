@@ -12,19 +12,38 @@ qblib.
 Hold `Config.target.keybind` (default `LMENU`, i.e. left Alt) to enter targeting mode. While held, aiming at a registered entity/model/global-type/global-bone/zone shows a world-space prompt fixed at screen centre (it never moves the mouse pointer or takes NUI focus). A zone match is decided by where the crosshair's raycast actually lands, not by whether the player is standing inside a zone -- you don't need to be inside a zone to target it, just aiming at a point within it. Release Alt to act: a sole available option runs immediately (its label is shown in the prompt while held); two or more options open qblib's focused menu after Alt is released, where the player can choose with mouse or keyboard.
 
 ## Performance configuration
-Targeting has no idle client thread while its key is up. The first scan happens
-immediately on activation; `tickAcquire` and `tickActive` both default to
-50ms while targeting is held. Rendering remains every frame in a separate
-lightweight loop, while the resolver uses broad and entity-focused raycasts to
-avoid missing an entity behind a non-targetable world hit. There is no targeting
-loop at all when the key is released. Zone matching is a plain per-tick scan of
-each registered zone's own `contains(point)` test against that tick's raycast
-hit -- no separate polling cadence to tune. `canInteractCacheMs` is disabled
-by default so dynamic foreign `canInteract`
+Targeting has no idle client thread while its key is up, and no targeting loop
+at all once it is released. The first scan happens immediately on activation;
+`tickAcquire` and `tickActive` both default to 50ms (20Hz) while targeting is
+held -- the resolver is deliberately **not** a per-frame loop, and raising its
+rate is almost never the right fix for a target that feels sluggish. Rendering
+stays every frame in a separate lightweight loop.
+
+Each resolver tick fires a broad world raycast and an entity-focused one, so an
+entity standing behind a non-targetable world hit is never missed. Both are
+started before either is awaited: the engine settles shape tests once per
+frame, so firing them together costs one frame instead of two.
+
+Zone matching runs each registered zone's own `contains(point)` test against
+that tick's raycast hit, but only for zones that can possibly match. Two exact
+filters run first -- the ped-to-aim-point distance against the largest interact
+distance any zone option uses, then an AABB grid keyed on the aim point -- so
+adding zones does not make holding the key more expensive. Neither filter can
+change which zones match; a zone whose extent cannot be derived (a qb-target
+`AddComboZone`/`AddEntityZone`) is simply always tested.
+
+While the camera and the player ped are both completely motionless, a tick
+reuses the previous scan instead of re-firing an identical ray.
+`staticRefresh` (default 200ms) caps how long that can go on, so the world
+moving under a frozen crosshair is still picked up; any aim input at all
+resolves on the very next tick. Set it to `0` to disable reuse.
+
+`canInteractCacheMs` is disabled by default so dynamic foreign `canInteract`
 functions are always fresh; enable a small value only after profiling static
 checks. Set `diagnostics = true` temporarily to print per-hold resolver
-metrics. The built-in global ped/vehicle demo is disabled by default and should
-only be enabled for development.
+metrics, including how many ticks were skipped as static. The built-in global
+ped/vehicle demo is disabled by default and should only be enabled for
+development.
 
 ## API
 All functions are plain FiveM exports on `qbtarget` — `exports.qbtarget:<name>(...)`. The same targets are also reachable through `exports['qb-target']:...` (PascalCase, qb-target's real function names) and `exports.ox_target:...` (camelCase, ox_target's real function names) — both are compatibility layers over this same API, not separate implementations.
