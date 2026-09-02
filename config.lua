@@ -35,6 +35,17 @@ Config.target = {
     -- used by ox_target without tying expensive native work to every frame.
     tickAcquire = 50,              -- ms while held with no available option
     tickActive = 50,               -- ms while an option is visible
+
+    -- Longest a held aim may reuse its previous scan while the camera AND the
+    -- player ped are both bit-for-bit motionless (client/loop.lua's
+    -- aimIsStatic). Standing still looking at a door is by far the most
+    -- common thing a player does while holding the key, and re-firing two
+    -- shape tests 20x/second down an identical ray cannot produce a different
+    -- answer -- the only thing it can catch is the WORLD moving under a
+    -- frozen crosshair (a ped walking into it), which is what this cap bounds.
+    -- Any actual aim input resolves on the very next tick, so this never adds
+    -- latency to targeting something deliberately. Set 0 to disable.
+    staticRefresh = 200,
     -- Default to no cache: third-party canInteract functions commonly depend
     -- on rapidly-changing local state. Servers with purely static checks may
     -- opt into a short cache after profiling.

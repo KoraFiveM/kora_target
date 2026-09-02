@@ -29,6 +29,11 @@ local function ensureTexture(dict)
     return HasStreamedTextureDictLoaded(dict)
 end
 
+-- Reused across frames: this loop runs at frame cadence whenever a sprite is
+-- on screen, and a fresh candidate array per frame is pure garbage-collector
+-- pressure for no benefit.
+local nearbyZones = {}
+
 local function drawZoneSprites()
     local settings = Config.target.sprites
     if not settings or not settings.enabled then return false end
@@ -40,8 +45,14 @@ local function drawZoneSprites()
     local colour = settings.colour or {}
     local drewAny = false
 
-    for id in pairs(Target.byZone) do
-        local registration = Target.registrations[id]
+    -- Broad phase first: a server with thousands of registered zones would
+    -- otherwise walk every one of them, every frame, only to reject almost
+    -- all of them on distance. canDrawSprite still runs the exact check.
+    for i = #nearbyZones, 1, -1 do nearbyZones[i] = nil end
+    Target.zonesWithin(playerCoords.x, playerCoords.y, settings.drawDistance or 0.0, nearbyZones)
+
+    for i = 1, #nearbyZones do
+        local registration = Target.registrations[nearbyZones[i]]
         if registration and canDrawSprite(registration, playerCoords, settings) then
             local coords = registration.spriteCoords
             local visible, screenX, screenY = GetScreenCoordFromWorldCoord(
@@ -61,18 +72,16 @@ local function drawZoneSprites()
     return drewAny
 end
 
+-- Checked twice per iteration by the worker below (loop condition + restart
+-- guard), at frame cadence while anything is drawing, so this must not be a
+-- registry walk. client/state.lua keeps the count as zones are registered and
+-- destroyed; drawSprite/spriteCoords are fixed at registration time and never
+-- mutate afterwards, so a counter can't drift out of sync with a walk.
 local function hasSpriteEnabledZone()
     local settings = Config.target.sprites
     if not settings or not settings.enabled then return false end
 
-    for id in pairs(Target.byZone) do
-        local registration = Target.registrations[id]
-        if registration and registration.drawSprite ~= false and registration.spriteCoords then
-            return true
-        end
-    end
-
-    return false
+    return Target.hasSpriteZone()
 end
 
 local spriteThreadRunning = false

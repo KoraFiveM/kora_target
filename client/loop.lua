@@ -6,23 +6,40 @@ local currentCandidates = {}
 -- Runtime-only resolver state. This cache never decides authority; it simply
 -- avoids resolving the same world/registration combination more often than a
 -- player can perceive it.
-local entityRegistrationCache = { key = nil, revision = nil, registrations = {} }
-local canInteractCache = {}
+local entityRegistrationCache = { entity = nil, model = nil, entityType = nil, revision = nil, registrations = {} }
+local canInteractCache, canInteractCacheCount = {}, 0
 local emptyRegistrations = {}
-local targetHudKey
 local syncTargetHud
-local diagnostics = { scans = 0, raycasts = 0, options = 0, canInteract = 0, elapsed = 0, lastReport = 0 }
+local diagnostics = { scans = 0, skipped = 0, raycasts = 0, options = 0, canInteract = 0, elapsed = 0, lastReport = 0 }
+
+-- The last snapshot syncTargetHud pushed to the NUI. See syncTargetHud below.
+local hudActive, hudRegistrationId, hudEntity, hudOption, hudOptionCount = false, nil, nil, nil, 0
+
+-- Reused scratch. resolveCandidates deliberately still allocates its own
+-- `candidates` array per pass: the release handler captures that exact table
+-- and hands it to an async menu, so it must not be written to again.
+local zoneCandidateIds = {}
+local zoneCandidates = {}
+local boneCache = {}
 
 local function distanceSq(a, b)
     local dx, dy, dz = a.x - b.x, a.y - b.y, a.z - b.z
     return dx * dx + dy * dy + dz * dz
 end
 
+local lastResolveAt, lastCamX, lastCamY, lastCamZ, lastCamPitch, lastCamYaw = 0, nil, nil, nil, nil, nil
+local lastPedX, lastPedY, lastPedZ, lastResolveRevision
+
 local function resetRuntimeState()
     currentCandidates, Target.hovering = {}, nil
     Target.success = false
-    entityRegistrationCache.key, entityRegistrationCache.revision, entityRegistrationCache.registrations = nil, nil, {}
-    canInteractCache = {}
+    entityRegistrationCache.entity, entityRegistrationCache.model = nil, nil
+    entityRegistrationCache.entityType, entityRegistrationCache.revision = nil, nil
+    entityRegistrationCache.registrations = {}
+    canInteractCache, canInteractCacheCount = {}, 0
+    lastResolveAt, lastResolveRevision = 0, nil
+    lastCamX, lastCamY, lastCamZ, lastCamPitch, lastCamYaw = nil, nil, nil, nil, nil
+    lastPedX, lastPedY, lastPedZ = nil, nil, nil
     if syncTargetHud then syncTargetHud(false) end
 end
 
@@ -120,8 +137,15 @@ local function entityRegistrations(entity)
         failedModelEntity, failedModelUntil = entity, GetGameTimer() + FAILED_MODEL_TTL_MS
         return emptyRegistrations
     end
-    local key, revision = ('%s:%s:%s'):format(entity, model, entityType), Target.registrationRevision or 0
-    if entityRegistrationCache.key == key and entityRegistrationCache.revision == revision then
+    -- Compared field by field instead of against a formatted "entity:model:type"
+    -- key. The key was rebuilt on every tick of every hold purely to be thrown
+    -- away on a cache hit; three equality tests answer the same question with
+    -- no allocation.
+    local revision = Target.registrationRevision or 0
+    if entityRegistrationCache.entity == entity
+        and entityRegistrationCache.model == model
+        and entityRegistrationCache.entityType == entityType
+        and entityRegistrationCache.revision == revision then
         return entityRegistrationCache.registrations
     end
 
@@ -130,40 +154,105 @@ local function entityRegistrations(entity)
     addRegistrations(registrations, seen, Target.byModel[model])
     addRegistrations(registrations, seen, Target.byGlobalType[entityType])
     if next(Target.byGlobalBone) then addRegistrations(registrations, seen, Target.byGlobalBone) end
-    entityRegistrationCache.key, entityRegistrationCache.revision, entityRegistrationCache.registrations = key, revision, registrations
+    entityRegistrationCache.entity, entityRegistrationCache.model = entity, model
+    entityRegistrationCache.entityType, entityRegistrationCache.revision = entityType, revision
+    entityRegistrationCache.registrations = registrations
     return registrations
 end
 
 -- Zone candidates are matched against where the player is AIMING (the
 -- raycast collision point), not where the player's own ped is standing --
 -- deliberately not QB.zones.getInside(), which answers "is the ped inside
--- this zone" and would require walking into a zone to target it. Every
--- zone-kind registration's own qblib zoneHandle already exposes a `contains`
--- test (client/state.lua tracks these in Target.byZone), so this is a plain
--- linear scan -- cheap enough to run every resolve given qbtarget's expected
--- zone counts, unlike the position-tracking machinery getInside relies on.
-local function zoneRegistrationsAt(point)
-    local registrations = {}
-    for id in pairs(Target.byZone) do
-        local registration = Target.registrations[id]
+-- this zone" and would require walking into a zone to target it.
+--
+-- This used to be a plain linear scan over every zone-kind registration,
+-- calling each one's `contains` predicate. That is the resolver's worst
+-- scaling behaviour on a real server: a qb-target-compatible install
+-- registers hundreds-to-thousands of zones, and this ran 20x/second for the
+-- whole hold. Two exact filters now sit in front of it, neither of which can
+-- change which zones match:
+--
+--  1. Every zone candidate anchors on the raycast hit itself, so the
+--     ped->anchor distance appendCandidates tests is IDENTICAL for all of
+--     them. One comparison against the largest interact distance any zone
+--     option uses therefore rejects the whole pass -- aiming across a room at
+--     something 8m away can never produce a 2.5m zone candidate.
+--  2. Target.zonesNear (client/state.lua) is an AABB grid keyed on the aim
+--     point, so only zones whose bounding box actually contains that point
+--     reach their real `contains` predicate. Zones with an underivable extent
+--     (the qb-target ComboZone/EntityZone bridges) stay in the scan.
+---@param point table Raycast hit coordinates.
+---@param pedCoords table? Player position; omit to skip filter 1.
+local function zoneRegistrationsAt(point, pedCoords)
+    if next(Target.byZone) == nil then return emptyRegistrations end
+
+    if pedCoords then
+        local reach = Target.maxZoneOptionDistance()
+        if distanceSq(pedCoords, point) > reach * reach then return emptyRegistrations end
+    end
+
+    local ids = zoneCandidateIds
+    for i = #ids, 1, -1 do ids[i] = nil end
+    Target.zonesNear(point, ids)
+
+    local registrations = zoneCandidates
+    for i = #registrations, 1, -1 do registrations[i] = nil end
+
+    for i = 1, #ids do
+        local registration = Target.registrations[ids[i]]
         if registration and registration.zoneHandle.contains(point) then
             registrations[#registrations + 1] = registration
         end
     end
+
     return registrations
+end
+
+-- Entries are keyed partly on a distance bucket, so simply walking towards a
+-- target mints a fresh key every tenth of a metre. Left unbounded the cache
+-- grew for the entire hold -- pure garbage behind a lookup that can never hit
+-- again. Sweep the expired entries once it gets large instead.
+local CAN_INTERACT_CACHE_LIMIT = 256
+
+local function pruneCanInteractCache(now)
+    local remaining = 0
+    for key, entry in pairs(canInteractCache) do
+        if now >= entry.expiresAt then
+            canInteractCache[key] = nil
+        else
+            remaining = remaining + 1
+        end
+    end
+    canInteractCacheCount = remaining
 end
 
 local function optionAllowed(registration, optionIndex, option, entity, distance, now)
     if not option.canInteract then return true end
-    local key = ('%s:%s:%s:%s'):format(registration.id, optionIndex, entity or 0, math.floor(distance * 10))
-    local cached = canInteractCache[key]
-    if cached and now < cached.expiresAt then return cached.allowed end
+
+    -- Config.target.canInteractCacheMs defaults to 0 (see config.lua): every
+    -- lookup then MISSES by definition, so building the key and storing the
+    -- result was pure overhead on the default configuration. Skip the cache
+    -- entirely rather than maintaining one nothing can read.
+    local cacheMs = Config.target.canInteractCacheMs
+    local key
+
+    if cacheMs > 0 then
+        key = ('%s:%s:%s:%s'):format(registration.id, optionIndex, entity or 0, math.floor(distance * 10))
+        local cached = canInteractCache[key]
+        if cached and now < cached.expiresAt then return cached.allowed end
+    end
 
     diagnostics.canInteract = diagnostics.canInteract + 1
     local ok, result = pcall(option.canInteract, entity, distance, option.data)
     local allowed = ok and result ~= false
     if not ok then print(("[qbtarget] canInteract for option '%s' errored: %s"):format(option.label, tostring(result))) end
-    canInteractCache[key] = { allowed = allowed, expiresAt = now + Config.target.canInteractCacheMs }
+
+    if key then
+        if canInteractCache[key] == nil then canInteractCacheCount = canInteractCacheCount + 1 end
+        canInteractCache[key] = { allowed = allowed, expiresAt = now + cacheMs }
+        if canInteractCacheCount > CAN_INTERACT_CACHE_LIMIT then pruneCanInteractCache(now) end
+    end
+
     return allowed
 end
 
@@ -190,14 +279,22 @@ end
 
 local function resolveCandidates(hit, entity, hitCoords, now)
     diagnostics.scans = diagnostics.scans + 1
-    local pedCoords, candidates, nearestIndex, boneCache = GetEntityCoords(PlayerPedId()), {}, nil, {}
+    -- Stamped here rather than at the call site so aimIsStatic's staleness cap
+    -- is anchored to the resolve that actually happened.
+    lastResolveAt = now
+    -- The bone cache is scoped to one resolver pass (a bone moves between
+    -- passes) but reused across them: a fresh table per tick was garbage for
+    -- the whole hold, and clearing the handful of keys it holds is cheaper
+    -- than allocating.
+    for cachedEntity in pairs(boneCache) do boneCache[cachedEntity] = nil end
+    local pedCoords, candidates, nearestIndex = GetEntityCoords(PlayerPedId()), {}, nil
     if hit and entity and entity ~= 0 then
         for _, registration in ipairs(entityRegistrations(entity)) do
             nearestIndex = appendCandidates(candidates, nearestIndex, registration, entity, hitCoords, pedCoords, now, boneCache)
         end
     end
     if hit and hitCoords then
-        for _, registration in ipairs(zoneRegistrationsAt(hitCoords)) do
+        for _, registration in ipairs(zoneRegistrationsAt(hitCoords, pedCoords)) do
             -- qb-target passes the raycast entity through zone canInteract /
             -- action payloads as well; it may be nil/0 when the zone point is
             -- world geometry.
@@ -214,16 +311,31 @@ end
 -- geometry, then an entity-focused mask gets a chance when that first cast
 -- reports no entity. The closer hit always wins, so this never targets through
 -- a nearer obstruction.
+--
+-- Both probes are STARTED before either is awaited (QB.raycast.startFromCamera
+-- was added to qblib for exactly this). The engine settles shape tests once
+-- per frame, so the previous await-then-fire ordering spent two frames -- and
+-- two thread wake-ups -- per tick to learn what one frame already knew.
+-- Starting them together halves both. The second probe is started
+-- unconditionally rather than only when the first reports no entity: a shape
+-- test costs far less than the extra frame that deciding first would cost,
+-- and when the broad probe does find an entity the second result is simply
+-- never read.
 local function raycastTarget()
-    local hit, hitCoords, entity = QB.raycast.fromCamera(Config.target.maxDistance, 511)
+    local broadProbe = QB.raycast.startFromCamera(Config.target.maxDistance, 511)
+    local entityProbe = QB.raycast.startFromCamera(Config.target.maxDistance, 26)
+
+    local hit, hitCoords, entity = QB.raycast.await(broadProbe)
     if entity and entity ~= 0 then return hit, hitCoords, entity end
 
-    local entityHit, entityCoords, entityHandle = QB.raycast.fromCamera(Config.target.maxDistance, 26)
+    -- Already settled -- it was started in the same frame the await above
+    -- waited out -- so this second await never yields.
+    local entityHit, entityCoords, entityHandle = QB.raycast.await(entityProbe)
     if not (entityHit and entityHandle and entityHandle ~= 0) then return hit, hitCoords, entity end
     if not hit or not hitCoords then return entityHit, entityCoords, entityHandle end
 
     local pedCoords = GetEntityCoords(PlayerPedId())
-    if not hitCoords or distanceSq(pedCoords, entityCoords) <= distanceSq(pedCoords, hitCoords) then
+    if distanceSq(pedCoords, entityCoords) <= distanceSq(pedCoords, hitCoords) then
         return entityHit, entityCoords, entityHandle
     end
 
@@ -241,26 +353,81 @@ end
 
 -- qblib owns the transparent NUI root. Targeting remains game-input driven;
 -- this is only a compact visual snapshot, never a focus-taking UI.
+-- The snapshot is compared field by field against what was last sent, rather
+-- than against a formatted key string. The old key was rebuilt (and the label
+-- with it) on every tick of every hold purely to be compared and dropped;
+-- the identity of the top candidate's registration, entity and option table,
+-- plus the option count, decide the same thing exactly and allocate nothing.
+-- The label is only formatted once something has actually changed.
 syncTargetHud = function(active, candidates)
-    local top = candidates and candidates[1]
-    local label = top and (#candidates == 1 and top.option.label or ('%d options'):format(#candidates)) or nil
-    local key = active and ('%s:%s:%s'):format(label or '', top and top.registration.id or '', top and top.entity or '') or 'hidden'
-    if key == targetHudKey then return end
+    if not active then
+        if not hudActive then return end
+        hudActive, hudRegistrationId, hudEntity, hudOption, hudOptionCount = false, nil, nil, nil, 0
+        QB.nui.send('qbtarget:target', { active = false })
+        return
+    end
 
-    targetHudKey = key
-    QB.nui.send('qbtarget:target', active and {
+    local top = candidates and candidates[1]
+    local registrationId = top and top.registration.id or nil
+    local entity = top and top.entity or nil
+    local option = top and top.option or nil
+    local optionCount = candidates and #candidates or 0
+
+    if hudActive and hudRegistrationId == registrationId and hudEntity == entity
+        and hudOption == option and hudOptionCount == optionCount then
+        return
+    end
+
+    hudActive, hudRegistrationId, hudEntity = true, registrationId, entity
+    hudOption, hudOptionCount = option, optionCount
+
+    QB.nui.send('qbtarget:target', {
         active = true,
-        label = label,
-        optionCount = candidates and #candidates or 0,
-    } or { active = false })
+        label = top and (optionCount == 1 and option.label or ('%d options'):format(optionCount)) or nil,
+        optionCount = optionCount,
+    })
+end
+
+-- The single most expensive thing a resolver tick does is fire two shape
+-- tests and yield a frame waiting for the engine to settle them. None of that
+-- can tell us anything new while the camera and the player are both perfectly
+-- still: the ray is the same ray, so it lands on the same point.
+--
+-- "Perfectly still" is deliberately exact equality, not an epsilon. Any real
+-- aim adjustment -- the smallest mouse movement, a controller stick, the ped
+-- drifting -- changes these floats and resolves immediately, so this can only
+-- ever engage while the player is genuinely holding still. What it cannot see
+-- is the world moving under a static crosshair (a ped walking into it), which
+-- is why it is capped: Config.target.staticRefresh is the longest a held aim
+-- can go without a real scan regardless.
+---@return boolean skip True when this tick can reuse the previous resolve.
+local function aimIsStatic(now)
+    local staticRefresh = Config.target.staticRefresh
+    if not staticRefresh or staticRefresh <= 0 then return false end
+
+    local cam, rot = GetGameplayCamCoord(), GetGameplayCamRot(2)
+    local ped = GetEntityCoords(PlayerPedId())
+    local revision = Target.registrationRevision
+
+    local unchanged = lastCamX == cam.x and lastCamY == cam.y and lastCamZ == cam.z
+        and lastCamPitch == rot.x and lastCamYaw == rot.z
+        and lastPedX == ped.x and lastPedY == ped.y and lastPedZ == ped.z
+        and lastResolveRevision == revision
+
+    lastCamX, lastCamY, lastCamZ = cam.x, cam.y, cam.z
+    lastCamPitch, lastCamYaw = rot.x, rot.z
+    lastPedX, lastPedY, lastPedZ = ped.x, ped.y, ped.z
+    lastResolveRevision = revision
+
+    return unchanged and (now - lastResolveAt) < staticRefresh
 end
 
 local function reportDiagnostics(now)
     if not Config.target.diagnostics or now - diagnostics.lastReport < Config.target.diagnosticsInterval then return end
     local scans = math.max(diagnostics.scans, 1)
-    print(('[qbtarget] %d scans, %d raycasts, %d options, %d canInteract calls, %.2fms average resolve')
-        :format(diagnostics.scans, diagnostics.raycasts, diagnostics.options, diagnostics.canInteract, diagnostics.elapsed / scans))
-    diagnostics = { scans = 0, raycasts = 0, options = 0, canInteract = 0, elapsed = 0, lastReport = now }
+    print(('[qbtarget] %d scans (%d ticks skipped as static), %d raycasts, %d options, %d canInteract calls, %.2fms average resolve')
+        :format(diagnostics.scans, diagnostics.skipped, diagnostics.raycasts, diagnostics.options, diagnostics.canInteract, diagnostics.elapsed / scans))
+    diagnostics = { scans = 0, skipped = 0, raycasts = 0, options = 0, canInteract = 0, elapsed = 0, lastReport = now }
 end
 
 local function runOption(candidate)
@@ -312,6 +479,11 @@ local function startTargeting()
                 Target.active = false
                 resetRuntimeState()
                 Wait(Config.target.tickIdle)
+            elseif aimIsStatic(now) then
+                Target.active = true
+                diagnostics.skipped = diagnostics.skipped + 1
+                reportDiagnostics(now)
+                Wait(currentCandidates[1] and Config.target.tickActive or Config.target.tickAcquire)
             else
                 Target.active = true
                 local startedAt = now
@@ -407,6 +579,7 @@ if Config.target.testMode then
         optionAllowed = optionAllowed,
         zoneRegistrationsAt = zoneRegistrationsAt,
         raycastTarget = raycastTarget,
+        aimIsStatic = aimIsStatic,
         resetRuntimeState = resetRuntimeState,
         resolveCandidates = resolveCandidates,
         candidateCount = function() return #currentCandidates end,

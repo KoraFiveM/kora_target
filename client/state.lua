@@ -174,6 +174,296 @@ local function syncSpriteLoop()
     if Target._syncSpriteLoop then Target._syncSpriteLoop() end
 end
 
+-- ---------------------------------------------------------------------------
+-- Zone broad phase
+--
+-- Every zone-kind registration used to be tested with its own
+-- `zoneHandle.contains(hitCoords)` on every resolver tick (client/loop.lua).
+-- That is fine for a handful of zones and quadratic-feeling on a real server:
+-- a qb-target-compatible install routinely registers hundreds-to-thousands of
+-- zones (every shop, job point, garage and stash), and 20Hz x N point-in-poly
+-- tests while Alt is held is the single largest cost the resolver had.
+--
+-- This is a uniform XY grid over each zone's axis-aligned bounding box,
+-- mirroring the one qblib's own modules/zones already keeps for its
+-- enter/exit tick (which qbtarget cannot reuse -- that grid answers "which
+-- zones are near the PLAYER", and qbtarget deliberately resolves against the
+-- AIM point instead; qblib exposes no point query over it either).
+--
+-- A zone is inserted into EVERY cell its AABB overlaps, so a point query only
+-- ever has to look at the single cell containing that point -- no 3x3
+-- neighbourhood, no radius padding. The AABB is then re-tested exactly before
+-- the real `contains` predicate runs, so the grid only ever removes work; it
+-- never decides containment.
+--
+-- Zones whose extent cannot be known (an arbitrary `contains` predicate from
+-- the qb-target ComboZone/EntityZone bridges, or a moving entity zone) go in
+-- `zoneUnbounded` and are still scanned every tick, exactly as before. That
+-- is the safe fallback: a missing bound costs performance, never correctness.
+-- ---------------------------------------------------------------------------
+local ZONE_CELL_SIZE = 50.0
+
+-- A bound that spans more cells than this is treated as unbounded rather than
+-- written into thousands of buckets. Nothing legitimate in a target resource
+-- is 3km across, and an accidental huge zone must not make registration itself
+-- expensive.
+local ZONE_MAX_CELL_SPAN = 64
+
+local zoneGrid = {}        -- cellKey -> { [id] = true }
+local zoneCellsOf = {}     -- id -> { cellKey, ... }
+local zoneBoundsOf = {}    -- id -> aabb, absent for an unbounded zone
+local zoneUnbounded = {}   -- id -> true
+local zonesWithinSeen = {} -- scratch, see Target.zonesWithin
+local spriteZoneCount = 0
+
+-- Same packing qblib/modules/zones/client.lua uses: the world is roughly
+-- +/-8000m, so at 50m cells the component magnitude stays far below the
+-- 100000 stride and can never alias another cell.
+local function zoneCellKey(cx, cy)
+    return cx * 100000 + cy
+end
+
+local function zoneCell(x, y)
+    return math.floor(x / ZONE_CELL_SIZE), math.floor(y / ZONE_CELL_SIZE)
+end
+
+local function boundsContain(bounds, point)
+    return point.x >= bounds.minX and point.x <= bounds.maxX
+        and point.y >= bounds.minY and point.y <= bounds.maxY
+        and point.z >= bounds.minZ and point.z <= bounds.maxZ
+end
+
+---Registers a zone id in the broad phase. `bounds` is an
+---{minX,maxX,minY,maxY,minZ,maxZ} AABB that must fully CONTAIN the zone --
+---an over-large box only costs a wasted exact test, an under-sized one would
+---silently hide the zone. Pass nil when the extent isn't knowable.
+---@param id integer
+---@param bounds table?
+local function indexZone(id, bounds)
+    if not bounds then
+        zoneUnbounded[id] = true
+        return
+    end
+
+    local minCx, minCy = zoneCell(bounds.minX, bounds.minY)
+    local maxCx, maxCy = zoneCell(bounds.maxX, bounds.maxY)
+
+    if (maxCx - minCx + 1) > ZONE_MAX_CELL_SPAN or (maxCy - minCy + 1) > ZONE_MAX_CELL_SPAN then
+        zoneUnbounded[id] = true
+        return
+    end
+
+    local cells = {}
+    for cx = minCx, maxCx do
+        for cy = minCy, maxCy do
+            local key = zoneCellKey(cx, cy)
+            local bucket = zoneGrid[key]
+            if not bucket then
+                bucket = {}
+                zoneGrid[key] = bucket
+            end
+            bucket[id] = true
+            cells[#cells + 1] = key
+        end
+    end
+
+    zoneCellsOf[id] = cells
+    zoneBoundsOf[id] = bounds
+end
+
+local function unindexZone(id)
+    zoneUnbounded[id] = nil
+    zoneBoundsOf[id] = nil
+
+    local cells = zoneCellsOf[id]
+    if not cells then return end
+    zoneCellsOf[id] = nil
+
+    for i = 1, #cells do
+        local bucket = zoneGrid[cells[i]]
+        if bucket then
+            bucket[id] = nil
+            if next(bucket) == nil then zoneGrid[cells[i]] = nil end
+        end
+    end
+end
+
+---Every zone-kind registration id whose bounds could possibly contain
+---`point`, appended to `out`. The caller still has to run each zone's real
+---`contains` predicate -- this only skips the ones that provably cannot match.
+---@param point table {x, y, z}
+---@param out integer[] Reused by the caller; cleared by it, not here.
+---@return integer[] out
+function Target.zonesNear(point, out)
+    local bucket = zoneGrid[zoneCellKey(zoneCell(point.x, point.y))]
+
+    if bucket then
+        for id in pairs(bucket) do
+            if boundsContain(zoneBoundsOf[id], point) then out[#out + 1] = id end
+        end
+    end
+
+    for id in pairs(zoneUnbounded) do
+        out[#out + 1] = id
+    end
+
+    return out
+end
+
+---Every zone-kind registration whose bounds fall within `radius` of the given
+---XY position, appended to `out`. Used by the sprite loop, which cares about a
+---disc around the player rather than a single aim point, so unlike
+---`Target.zonesNear` it has to sweep the covered cells.
+---@param x number
+---@param y number
+---@param radius number
+---@param out integer[]
+---@return integer[] out
+function Target.zonesWithin(x, y, radius, out)
+    local minCx, minCy = zoneCell(x - radius, y - radius)
+    local maxCx, maxCy = zoneCell(x + radius, y + radius)
+
+    -- A zone wider than one cell lives in several buckets, so an area sweep
+    -- (unlike the single-cell Target.zonesNear) can see the same id twice.
+    -- Reused rather than allocated per call: the sprite loop runs at frame
+    -- cadence.
+    local seen = zonesWithinSeen
+    for id in pairs(seen) do seen[id] = nil end
+
+    for cx = minCx, maxCx do
+        for cy = minCy, maxCy do
+            local bucket = zoneGrid[zoneCellKey(cx, cy)]
+            if bucket then
+                for id in pairs(bucket) do
+                    if not seen[id] then
+                        seen[id] = true
+                        out[#out + 1] = id
+                    end
+                end
+            end
+        end
+    end
+
+    for id in pairs(zoneUnbounded) do
+        out[#out + 1] = id
+    end
+
+    return out
+end
+
+---True when at least one registered zone would draw a sprite. A counter
+---rather than a registry walk because client/sprites.lua checks this twice
+---per frame while any sprite is on screen.
+---@return boolean
+function Target.hasSpriteZone()
+    return spriteZoneCount > 0
+end
+
+-- The largest interact distance any zone option can use. client/loop.lua
+-- compares it against the ped->aim-point distance, which is identical for
+-- every zone candidate in a given tick (a zone candidate's anchor IS the
+-- raycast hit), so a single comparison can skip the entire zone pass. Cached
+-- against the registration generation because option distances are mutable
+-- via Target._replaceOptions.
+local maxZoneOptionDistance, maxZoneOptionRevision = 0.0, -1
+
+---@return number
+function Target.maxZoneOptionDistance()
+    if maxZoneOptionRevision == Target.registrationRevision then return maxZoneOptionDistance end
+
+    local largest = 0.0
+    for id in pairs(Target.byZone) do
+        local registration = Target.registrations[id]
+        if registration then
+            for _, option in ipairs(registration.options) do
+                local distance = option.distance or registration.distance or Config.target.defaultOptionDistance
+                if distance > largest then largest = distance end
+            end
+        end
+    end
+
+    maxZoneOptionDistance, maxZoneOptionRevision = largest, Target.registrationRevision
+    return largest
+end
+
+---Shared tail of every zone constructor: publishes the registration, indexes
+---it for the broad phase, and keeps the sprite counter honest.
+---@param id integer
+---@param registration table
+---@param bounds table? See indexZone.
+local function registerZone(id, registration, bounds)
+    Target.registrations[id] = registration
+    Target.byZone[id] = true
+    indexZone(id, bounds)
+    if registration.drawSprite and registration.spriteCoords then
+        spriteZoneCount = spriteZoneCount + 1
+    end
+    syncSpriteLoop()
+    touchRegistrations()
+end
+
+---Undoes registerZone's bookkeeping. Called from Target.destroyRegistration.
+---@param id integer
+---@param registration table
+local function unregisterZone(id, registration)
+    Target.byZone[id] = nil
+    unindexZone(id)
+    if registration.drawSprite and registration.spriteCoords then
+        spriteZoneCount = spriteZoneCount - 1
+    end
+end
+
+-- Bounds builders. Each returns an AABB that fully contains the shape, or nil
+-- when it cannot be derived (see indexZone).
+local function boxBounds(coords, size, rotation)
+    local radians = math.rad(rotation or 0.0)
+    local cosR, sinR = math.abs(math.cos(radians)), math.abs(math.sin(radians))
+    local halfX, halfY = size.x / 2, size.y / 2
+    -- Rotating a box only ever grows its axis-aligned footprint, so the
+    -- rotated half-extents below are the exact enclosing AABB, not padding.
+    local extentX = halfX * cosR + halfY * sinR
+    local extentY = halfX * sinR + halfY * cosR
+    local halfZ = size.z / 2
+
+    return {
+        minX = coords.x - extentX, maxX = coords.x + extentX,
+        minY = coords.y - extentY, maxY = coords.y + extentY,
+        minZ = coords.z - halfZ, maxZ = coords.z + halfZ,
+    }
+end
+
+local function sphereBounds(coords, radius)
+    return {
+        minX = coords.x - radius, maxX = coords.x + radius,
+        minY = coords.y - radius, maxY = coords.y + radius,
+        minZ = coords.z - radius, maxZ = coords.z + radius,
+    }
+end
+
+-- minZ/maxZ are only known when the caller gave them explicitly: qblib
+-- derives an implicit band from `thickness` against its own config default,
+-- which lives in qblib's environment and isn't readable from here. An
+-- unbounded vertical band is the correct conservative answer -- the grid is
+-- indexed on XY only, so a tall AABB costs at most one wasted exact test and
+-- can never hide a zone.
+local function polyBounds(points, minZ, maxZ)
+    local bounds = {
+        minX = math.huge, maxX = -math.huge,
+        minY = math.huge, maxY = -math.huge,
+        minZ = minZ or -math.huge, maxZ = maxZ or math.huge,
+    }
+
+    for _, point in ipairs(points) do
+        if point.x < bounds.minX then bounds.minX = point.x end
+        if point.x > bounds.maxX then bounds.maxX = point.x end
+        if point.y < bounds.minY then bounds.minY = point.y end
+        if point.y > bounds.maxY then bounds.maxY = point.y end
+    end
+
+    return bounds
+end
+
+
 ---Every id still owned by `id` collected into a plain array before any of
 ---them are torn down -- destroyRegistration mutates the very index tables
 ---these ids are read from, so walking `pairs(set)` while destroying entries
@@ -222,7 +512,7 @@ function Target.destroyRegistration(id)
         -- REAL invoking resource, captured in Target.addBoxZone/etc before
         -- ever calling into QB.zones.*) is what has to proactively tear the
         -- underlying zone down here. See AGENTS.md "Ownership subtlety".
-        Target.byZone[id] = nil
+        unregisterZone(id, registration)
         if registration.zoneHandle then registration.zoneHandle.remove() end
     end
 end
@@ -514,7 +804,7 @@ function Target.addBoxZone(zoneOptions)
         debug = zoneDebugEnabled(zoneOptions),
     })
 
-    Target.registrations[id] = {
+    registerZone(id, {
         id = id,
         kind = "zone",
         options = options,
@@ -522,10 +812,7 @@ function Target.addBoxZone(zoneOptions)
         zoneHandle = zoneHandle,
         spriteCoords = copyCoords(zoneOptions.coords),
         drawSprite = zoneOptions.drawSprite ~= false,
-    }
-    Target.byZone[id] = true
-    syncSpriteLoop()
-    touchRegistrations()
+    }, boxBounds(zoneOptions.coords, zoneOptions.size, zoneOptions.rotation))
     Target.ownership.track(owner, id)
 
     return id
@@ -557,7 +844,7 @@ function Target.addSphereZone(zoneOptions)
         debug = zoneDebugEnabled(zoneOptions),
     })
 
-    Target.registrations[id] = {
+    registerZone(id, {
         id = id,
         kind = "zone",
         options = options,
@@ -565,10 +852,7 @@ function Target.addSphereZone(zoneOptions)
         zoneHandle = zoneHandle,
         spriteCoords = copyCoords(zoneOptions.coords),
         drawSprite = zoneOptions.drawSprite ~= false,
-    }
-    Target.byZone[id] = true
-    syncSpriteLoop()
-    touchRegistrations()
+    }, sphereBounds(zoneOptions.coords, zoneOptions.radius))
     Target.ownership.track(owner, id)
 
     return id
@@ -606,7 +890,7 @@ function Target.addPolyZone(zoneOptions)
         debug = zoneDebugEnabled(zoneOptions),
     })
 
-    Target.registrations[id] = {
+    registerZone(id, {
         id = id,
         kind = "zone",
         options = options,
@@ -614,10 +898,7 @@ function Target.addPolyZone(zoneOptions)
         zoneHandle = zoneHandle,
         spriteCoords = polySpriteCoords(zoneOptions.points),
         drawSprite = zoneOptions.drawSprite ~= false,
-    }
-    Target.byZone[id] = true
-    syncSpriteLoop()
-    touchRegistrations()
+    }, polyBounds(zoneOptions.points, zoneOptions.minZ, zoneOptions.maxZ))
     Target.ownership.track(owner, id)
 
     return id
@@ -634,7 +915,7 @@ end
 ---@param spriteCoords? any
 ---@param drawSprite? boolean
 ---@return integer id
-function Target._addCustomZone(contains, options, defaultDistance, spriteCoords, drawSprite)
+function Target._addCustomZone(contains, options, defaultDistance, spriteCoords, drawSprite, bounds)
     assert(isCallable(contains), 'custom zone contains must be callable.')
     options = validateOptions(options)
     local id = nextId()
@@ -644,7 +925,7 @@ function Target._addCustomZone(contains, options, defaultDistance, spriteCoords,
         contains = contains,
         remove = function() removed = true end,
     }
-    Target.registrations[id] = {
+    registerZone(id, {
         id = id,
         kind = 'zone',
         options = options,
@@ -652,12 +933,35 @@ function Target._addCustomZone(contains, options, defaultDistance, spriteCoords,
         zoneHandle = zoneHandle,
         spriteCoords = spriteCoords,
         drawSprite = spriteCoords ~= nil and drawSprite ~= false,
-    }
-    Target.byZone[id] = true
-    syncSpriteLoop()
-    touchRegistrations()
+    }, bounds)
     Target.ownership.track(owner, id)
     return id
+end
+
+---Builds a broad-phase AABB for Target._addCustomZone from an XY centre,
+---per-axis half-extents, and an optional vertical band. Exposed for the compat
+---bridges, which construct their own `contains` predicates but do know the
+---shape those predicates describe.
+---
+---Every argument must be a bound the predicate can never match OUTSIDE of. An
+---over-large box only costs a wasted exact test; an under-sized one silently
+---makes the zone untargetable. Omit the bounds argument entirely (rather than
+---guessing) whenever that cannot be guaranteed -- an unindexed zone is still
+---scanned every tick, so the only cost is the performance this index exists
+---to reclaim.
+---@param x number
+---@param y number
+---@param extentX number
+---@param extentY number
+---@param minZ number? Omit for an unbounded vertical band.
+---@param maxZ number?
+---@return table bounds
+function Target._zoneBounds(x, y, extentX, extentY, minZ, maxZ)
+    return {
+        minX = x - extentX, maxX = x + extentX,
+        minY = y - extentY, maxY = y + extentY,
+        minZ = minZ or -math.huge, maxZ = maxZ or math.huge,
+    }
 end
 
 ---@param id integer
