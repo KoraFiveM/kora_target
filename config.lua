@@ -67,7 +67,7 @@ Config.target = {
     -- global targets have no single stable location, and scanning every game
     -- entity just to draw icons would be needlessly expensive.
     sprites = {
-        enabled = true,
+        enabled = false,
         drawDistance = 20.0, -- meters; sprite draw work is skipped beyond this
         offset = { x = 0.0, y = 0.0, z = 0.45 },
         dict = 'shared',

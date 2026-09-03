@@ -190,6 +190,9 @@ harness.test('global zone debug and individual sprite visibility are retained on
 end)
 
 harness.test('poly zones get a stable averaged sprite anchor and distance culling', function()
+    local priorSpriteEnabled = Config.target.sprites.enabled
+    Config.target.sprites.enabled = true
+
     local id = Target.addPolyZone({
         points = {
             { x = 0, y = 0, z = 10 },
@@ -206,6 +209,8 @@ harness.test('poly zones get a stable averaged sprite anchor and distance cullin
         'nearby enabled zones should draw their sprite')
     harness.assertTrue(not sprites.canDraw(registration, { x = 1000, y = 2, z = 10 }, Config.target.sprites),
         'far-away zones must be rejected before any sprite native calls')
+
+    Config.target.sprites.enabled = priorSpriteEnabled
 end)
 
 harness.test('zone candidates require an actual raycast hit', function()
