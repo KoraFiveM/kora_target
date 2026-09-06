@@ -863,9 +863,10 @@ local function applyPedConfig(ped, data)
     if data.blockevents then SetBlockingOfNonTemporaryEvents(ped, true) end
 
     if data.animDict and data.anim then
-        RequestAnimDict(data.animDict)
-        while not HasAnimDictLoaded(data.animDict) do Wait(0) end
-        TaskPlayAnim(ped, data.animDict, data.anim, 8.0, 0, -1, data.flag or 1, 0, false, false, false)
+        local loaded, err = QB.stream.loadAnimDict(data.animDict, function(dict)
+            TaskPlayAnim(ped, dict, data.anim, 8.0, 0, -1, data.flag or 1, 0, false, false, false)
+        end)
+        if not loaded then error(('SpawnPed animation failed: %s'):format(err), 2) end
     end
 
     if data.scenario then
@@ -907,8 +908,16 @@ local function applyPedConfig(ped, data)
         end
     end
 
-    if isCallable(data.action) then data.action(data) end
     return targetRegistrationId
+end
+
+local function removePedTarget(ped, data, registrationId)
+    if not registrationId then return end
+    if data.target and data.target.useModel then
+        Target.removeModel(data.model, registrationId)
+    else
+        Target.removeEntity(ped, registrationId)
+    end
 end
 
 local function spawnOnePed(data, owner, configIndex)
@@ -916,14 +925,32 @@ local function spawnOnePed(data, owner, configIndex)
     assert(data.model ~= nil, 'SpawnPed requires a model.')
     assert(data.coords ~= nil, 'SpawnPed requires coords.')
 
-    if type(data.model) == 'string' then data.model = joaat(data.model) end
-    RequestModel(data.model)
-    while not HasModelLoaded(data.model) do Wait(0) end
+    local ped
+    local model, err = QB.stream.loadModel(data.model, function(loadedModel)
+        local z = data.minusOne and (data.coords.z - 1.0) or data.coords.z
+        -- SpawnPed is a client compatibility helper and has no server authority
+        -- capable of approving shared world state. Keep its configured peds local
+        -- even when an older consumer asks for `networked = true`; shared peds must
+        -- be created by their owning server resource under strict lockdown.
+        ped = CreatePed(0, loadedModel, data.coords.x, data.coords.y, z, data.coords.w or 0.0, false, true)
+    end)
+    if not model then error(('SpawnPed model failed: %s'):format(err), 2) end
+    if not ped or ped == 0 then error('SpawnPed failed to create the configured ped.', 2) end
+    data.model = model
 
-    local z = data.minusOne and (data.coords.z - 1.0) or data.coords.z
-    local ped = CreatePed(0, data.model, data.coords.x, data.coords.y, z, data.coords.w or 0.0,
-        data.networked or false, true)
-    local targetRegistrationId = applyPedConfig(ped, data)
+    local ok, targetRegistrationId = pcall(applyPedConfig, ped, data)
+    if not ok then
+        DeletePed(ped)
+        error(targetRegistrationId, 2)
+    end
+    if isCallable(data.action) then
+        local actionOk, actionErr = pcall(data.action, data)
+        if not actionOk then
+            removePedTarget(ped, data, targetRegistrationId)
+            DeletePed(ped)
+            error(actionErr, 2)
+        end
+    end
 
     data.currentpednumber = ped
     spawnedPedRecords[ped] = {
@@ -942,7 +969,14 @@ local function addSpawnedPedConfig(data, owner)
     spawnedPedConfigs[configIndex] = data
     spawnedPedOwners[configIndex] = owner
 
-    if data.spawnNow then spawnOnePed(data, owner, configIndex) end
+    if data.spawnNow then
+        local ok, err = pcall(spawnOnePed, data, owner, configIndex)
+        if not ok then
+            spawnedPedConfigs[configIndex] = nil
+            spawnedPedOwners[configIndex] = nil
+            error(err, 2)
+        end
+    end
 end
 
 local function SpawnPed(data)
@@ -961,13 +995,7 @@ end
 
 local function removeSpawnedPedEntity(ped)
     local record = spawnedPedRecords[ped]
-    if record and record.targetRegistrationId then
-        if record.targetUsesModel then
-            Target.removeModel(record.data.model, record.targetRegistrationId)
-        else
-            Target.removeEntity(ped, record.targetRegistrationId)
-        end
-    end
+    if record then removePedTarget(ped, record.data, record.targetRegistrationId) end
 
     DeletePed(ped)
     if record then

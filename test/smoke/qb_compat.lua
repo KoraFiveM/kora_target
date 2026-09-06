@@ -98,6 +98,21 @@ _G.SetCanPedEquipWeapon = function() end
 _G.GiveWeaponToPed = function() end
 _G.SetPedCurrentWeaponVisible = function() end
 
+QB.stream = {
+    loadModel = function(model, callback)
+        RequestModel(model)
+        if not HasModelLoaded(model) then return false, 'model timeout' end
+        callback(model)
+        return model
+    end,
+    loadAnimDict = function(dict, callback)
+        RequestAnimDict(dict)
+        if not HasAnimDictLoaded(dict) then return false, 'animation timeout' end
+        callback(dict)
+        return dict
+    end,
+}
+
 -- The qb-target compat now fetches qb-core once at load time (job/gang/item
 -- enforcement, see AGENTS.md's "Job/gang/item enforcement") -- CreateThread
 -- runs synchronously here (same idiom qbcore's own legacy_callback_wire.lua
@@ -320,6 +335,7 @@ harness.test('SpawnPed supports qb-taxijob config and registers its entity targe
             distance = 2.5,
         },
         action = function() actionCalls = actionCalls + 1 end,
+        networked = true,
         spawnNow = true,
         currentpednumber = 0,
     }
@@ -332,7 +348,7 @@ harness.test('SpawnPed supports qb-taxijob config and registers its entity targe
     harness.assertEqual(created.ped, ped, 'SpawnPed must publish the created handle as currentpednumber')
     harness.assertEqual(created.z, 73.08, 'minusOne must lower the spawn z coordinate by one')
     harness.assertEqual(created.heading, 228.81, 'the vector4 w component must become the ped heading')
-    harness.assertFalse(created.networked, 'peds default to local/non-networked')
+    harness.assertFalse(created.networked, 'SpawnPed must remain local even when legacy config requests networking')
     harness.assertTrue(created.missionPed, 'explicitly spawned peds must be script-hosted mission peds')
     harness.assertTrue(frozenPeds[ped], 'freeze must freeze the spawned ped')
     harness.assertTrue(invinciblePeds[ped], 'invincible must make the spawned ped invincible')
@@ -351,6 +367,42 @@ harness.test('SpawnPed supports qb-taxijob config and registers its entity targe
     harness.assertEqual(pedConfig.currentpednumber, 0, 'RemoveSpawnedPed must clear currentpednumber')
     harness.assertTrue(Target.registrations[registrationId] == nil,
         'RemoveSpawnedPed must tear down the ped target registration')
+end)
+
+harness.test('SpawnPed fails cleanly when qblib cannot stream the model', function()
+    local original = QB.stream.loadModel
+    QB.stream.loadModel = function() return false, 'model timeout' end
+    local ok, err = pcall(spawnPed, {
+        model = 'missing_model',
+        coords = { x = 0, y = 0, z = 0 },
+        spawnNow = true,
+    })
+    QB.stream.loadModel = original
+
+    harness.assertFalse(ok, 'an unavailable model must reject instead of waiting forever')
+    harness.assertTrue(tostring(err):find('model timeout', 1, true) ~= nil,
+        'the bounded streaming failure should reach the caller')
+end)
+
+harness.test('SpawnPed rolls back its target when the caller action throws', function()
+    local before = 0
+    for _ in pairs(Target.registrations) do before = before + 1 end
+    local deletedBefore = #deletedPeds
+
+    local ok, err = pcall(spawnPed, {
+        model = 'action_failure_model',
+        coords = { x = 0, y = 0, z = 0 },
+        spawnNow = true,
+        target = { useModel = true, options = { { label = 'Temporary' } } },
+        action = function() error('action exploded') end,
+    })
+
+    local after = 0
+    for _ in pairs(Target.registrations) do after = after + 1 end
+    harness.assertFalse(ok, 'the caller action error should reach the SpawnPed caller')
+    harness.assertTrue(tostring(err):find('action exploded', 1, true) ~= nil)
+    harness.assertEqual(after, before, 'the failed spawn must not leave a model-wide target registered')
+    harness.assertEqual(#deletedPeds, deletedBefore + 1, 'the partially configured ped must be deleted')
 end)
 
 harness.test('RaycastCamera matches qb-target return order and shapes', function()

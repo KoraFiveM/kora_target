@@ -84,6 +84,11 @@ This was a confirmed, security-relevant compat bug before the fix: `jobType` was
 The ox_target compat (`client/compat/ox-target.lua`) is unaffected — real ox_target's own filtering model is `groups`-based against ox_core, a different framework this repo also doesn't run; that stays unenforced by design, same as `docs.md` describes.
 
 ## Server actions
+The qb-target `SpawnPed` compatibility helper uses qblib's bounded
+`QB.stream.loadModel` and `QB.stream.loadAnimDict` helpers. Bad or unavailable
+assets fail cleanly, streaming requests are released, and a partial ped/config
+is rolled back instead of leaving a caller suspended forever.
+
 `server/server.lua`'s `qbtarget:server:runAction` callback replies with `(ok, ...)` directly — `true` plus the registered action handler's own return values, or `false` plus a reason string. This relies on `qblib`'s `QB.callback` module forwarding a handler's return values in full, end to end (multi-value support added after this resource was first built — an earlier version of this file hand-rolled a `{ok, result?, error?}` envelope table to work around `QB.callback` only forwarding a single value; that workaround is gone now that the underlying limitation is fixed in qblib itself). `client/state.lua`'s `Target.runServerAction` is now a thin pass-through — `return QB.callback.trigger(...)` — with no unpacking of its own needed.
 
 ## Testing
