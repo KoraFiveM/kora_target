@@ -51,6 +51,13 @@ _G.QB = {
         end,
     },
     nui = { send = function() end },
+    interact = {
+        open = function(items)
+            _G.interactItems = items
+            return true
+        end,
+        isActive = function() return false end,
+    },
     callback = { trigger = function() end },
     keybind = {
         add = function(options)
@@ -96,6 +103,20 @@ dofile(resourceRoot .. 'client/loop.lua')
 
 local runtime = Target._testRuntime
 local sprites = Target._testSprites
+
+harness.test('multiple target options open qblib interact and dispatch the selected action', function()
+    local selected = false
+    runtime.selectCandidates({
+        { option = { label = 'First', icon = 'one', onSelect = function() selected = true end } },
+        { option = { label = 'Second', icon = 'two', onSelect = function() end } },
+    })
+
+    harness.assertEqual(#interactItems, 2, 'multiple candidates must use the interact selector')
+    harness.assertEqual(interactItems[1].label, 'First', 'the interact selector must preserve option labels')
+    harness.assertTrue(type(interactItems[1].action) == 'function', 'each interact entry must dispatch its candidate')
+    interactItems[1].action()
+    harness.assertTrue(selected, 'the selected interact entry must run its target action')
+end)
 
 harness.test('sprite worker is lazy and requires a sprite-enabled zone', function()
     harness.assertTrue(not sprites.isRunning(), 'loading qbtarget with no zones must not create a sprite worker')

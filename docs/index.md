@@ -241,8 +241,8 @@ The native `exports.qbtarget` API accepts these fields but deliberately leaves p
 
 `Config.target.keybind` (default `LMENU`, hold-to-target) and `Config.target.toggle`
 (set `true` for press-to-activate instead of hold, matching ox_target's default).
-Releasing `Config.target.keybind` runs the sole option or opens qblib's focused
-menu for multiple options (mouse and keyboard both work). `Config.target.maxDistance`
+Releasing `Config.target.keybind` runs the sole option or opens qblib's pointer-free
+interact selector for multiple options (scroll or Up/Down to choose, E to select). `Config.target.maxDistance`
 (10.0m raycast reach) and `defaultOptionDistance` (2.5m fallback interact
 distance). `tickAcquire`/`tickActive` (50ms resolver cadence while the key is
 held; no thread at all while released). `canInteractCacheMs` (0/disabled by

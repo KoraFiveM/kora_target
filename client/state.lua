@@ -34,6 +34,15 @@ Target.debugEnabled = false
 -- soon as a registration changes. This is not exposed as API state.
 Target.registrationRevision = 0
 
+-- qbmultichar sets this replicated state for its character, spawn, and scene
+-- editor modes. Targeting the preview world would expose real gameplay
+-- actions (beds, banking, doors, etc.) while the player is choosing a spawn.
+function Target.interactionsLocked()
+    local state = LocalPlayer and LocalPlayer.state
+    local mode = state and state['qbmultichar:mode']
+    return mode ~= nil and mode ~= false
+end
+
 local function touchRegistrations()
     Target.registrationRevision = Target.registrationRevision + 1
 end

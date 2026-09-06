@@ -436,36 +436,39 @@ local function runOption(candidate)
 end
 
 ---Resolves the candidates captured at Alt release. One option is immediate;
----multiple options deliberately use qblib's regular menu, which takes focus
----only after targeting has ended and supports both mouse and keyboard input.
+---multiple options use qblib's game-input-driven interact selector, so the
+---player can keep camera control and choose with scroll/arrows plus E.
 local function selectCandidates(candidates)
     if #candidates == 0 then return end
     if #candidates == 1 then return runOption(candidates[1]) end
 
-    menuOpen = true
-    local items, byId = {}, {}
+    local items = {}
     for index, candidate in ipairs(candidates) do
-        local id = tostring(index)
         items[index] = {
-            id = id,
             label = candidate.option.label,
             icon = candidate.option.icon,
+            action = function() runOption(candidate) end,
         }
-        byId[id] = candidate
     end
 
+    menuOpen = QB.interact.open(items)
+    if not menuOpen then return end
+
     CreateThread(function()
-        local result = QB.nui.openMenu(items, 'Select action')
-        menuOpen = false
-        if result and not result.cancelled then
-            local selected = byId[result.selectedId]
-            if selected then runOption(selected) end
+        while QB.interact.isActive() do
+            Wait(0)
         end
+        menuOpen = false
     end)
 end
 
 local function startTargeting()
-    if holdingThread then return end
+    if holdingThread or Target.interactionsLocked() then
+        holding = false
+        Target.active = false
+        resetRuntimeState()
+        return
+    end
     holdingThread = true
     Target.active = Target.enabled
     resetRuntimeState()
@@ -475,7 +478,11 @@ local function startTargeting()
     CreateThread(function()
         while holding do
             local now = GetGameTimer()
-            if not Target.enabled or menuOpen then
+            if not Target.enabled or menuOpen or Target.interactionsLocked() then
+                if Target.interactionsLocked() then
+                    holding = false
+                    if menuOpen then QB.interact.close(); menuOpen = false end
+                end
                 Target.active = false
                 resetRuntimeState()
                 Wait(Config.target.tickIdle)
@@ -510,6 +517,12 @@ QB.keybind.add({
     defaultMapper = 'keyboard',
     defaultKey = Config.target.keybind.defaultKey,
     onPressed = function()
+        if Target.interactionsLocked() then
+            holding = false
+            Target.active = false
+            resetRuntimeState()
+            return
+        end
         if not Config.target.toggle then
             holding = true
             startTargeting()
@@ -527,6 +540,12 @@ QB.keybind.add({
         end
     end,
     onReleased = function()
+        if Target.interactionsLocked() then
+            holding = false
+            Target.active = false
+            resetRuntimeState()
+            return
+        end
         if Config.target.toggle then return end
         holding = false
         local candidates = currentCandidates
@@ -581,6 +600,7 @@ if Config.target.testMode then
         raycastTarget = raycastTarget,
         aimIsStatic = aimIsStatic,
         resetRuntimeState = resetRuntimeState,
+        selectCandidates = selectCandidates,
         resolveCandidates = resolveCandidates,
         candidateCount = function() return #currentCandidates end,
     }
