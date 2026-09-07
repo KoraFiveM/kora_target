@@ -84,3 +84,6 @@ Config.target = {
     reticle = true,                -- draw a small centre-screen dot while holding the key, so targeting mode is VISIBLE even when nothing is under the crosshair (brightens over a target). Set false for a fully headless engine.
     demo = false,                  -- development-only global ped/vehicle targets; enable explicitly when testing qbtarget itself.
 }
+
+-- Registers this resource-owned configuration with qblib without changing its public Config table.
+if QB and QB.config and QB.config.adopt then Config = QB.config.adopt(Config) end
