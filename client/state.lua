@@ -991,6 +991,7 @@ function Target.setEnabled(enabled)
         Target.active = false
         Target.success = false
         Target.hovering = nil
+        if Target._cancelCurrentTargeting then Target._cancelCurrentTargeting() end
     end
 end
 

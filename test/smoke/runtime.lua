@@ -9,6 +9,7 @@ local now, canInteractCalls, boneReads = 0, 0, 0
 local commands = {}
 local raycastResponses, raycastFlags, raycastProbes = {}, {}, {}
 local zoneHandles, zoneCalls = {}, {}
+local frozenEntities = {}
 
 -- Mirrors qblib's own zone handle shape (client/state.lua only relies on
 -- .remove and .contains) without pulling in qblib's real box/sphere/poly
@@ -57,6 +58,7 @@ _G.QB = {
             return true
         end,
         isActive = function() return false end,
+        close = function() end,
     },
     callback = { trigger = function() end },
     keybind = {
@@ -76,6 +78,8 @@ _G.RegisterCommand = function(name, fn) commands[name] = fn end
 _G.RegisterKeyMapping = function() end
 _G.GetGameTimer = function() return now end
 _G.PlayerPedId = function() return 1 end
+_G.IsEntityPositionFrozen = function(entity) return frozenEntities[entity] == true end
+_G.FreezeEntityPosition = function(entity, frozen) frozenEntities[entity] = frozen end
 _G.GetEntityCoords = function() return { x = 0, y = 0, z = 0 } end
 _G.GetGameplayCamCoord = function() return { x = 0, y = 0, z = 0 } end
 _G.GetGameplayCamRot = function() return { x = 0, y = 0, z = 0 } end
@@ -112,10 +116,25 @@ harness.test('multiple target options open qblib interact and dispatch the selec
     })
 
     harness.assertEqual(#interactItems, 2, 'multiple candidates must use the interact selector')
+    harness.assertTrue(frozenEntities[1], 'the player must stay in place while choosing from a target snapshot')
     harness.assertEqual(interactItems[1].label, 'First', 'the interact selector must preserve option labels')
     harness.assertTrue(type(interactItems[1].action) == 'function', 'each interact entry must dispatch its candidate')
     interactItems[1].action()
     harness.assertTrue(selected, 'the selected interact entry must run its target action')
+    runtime.closeTargetMenu()
+    harness.assertFalse(frozenEntities[1], 'closing the selector must restore player movement')
+end)
+
+harness.test('disabling targeting closes a target selector and restores player movement', function()
+    runtime.selectCandidates({
+        { option = { label = 'First', onSelect = function() end } },
+        { option = { label = 'Second', onSelect = function() end } },
+    })
+
+    harness.assertTrue(frozenEntities[1], 'opening a target selector must freeze the player')
+    Target.setEnabled(false)
+    harness.assertFalse(frozenEntities[1], 'disabling targeting must not leave the player frozen')
+    Target.setEnabled(true)
 end)
 
 harness.test('sprite worker is lazy and requires a sprite-enabled zone', function()

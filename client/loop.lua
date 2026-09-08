@@ -2,6 +2,7 @@ Target = Target or {}
 
 local holding, holdingThread, menuOpen = false, false, false
 local currentCandidates = {}
+local menuPed, menuPedWasFrozen
 
 -- Runtime-only resolver state. This cache never decides authority; it simply
 -- avoids resolving the same world/registration combination more often than a
@@ -43,12 +44,37 @@ local function resetRuntimeState()
     if syncTargetHud then syncTargetHud(false) end
 end
 
+-- The candidate list is captured when Alt is released. It must remain valid
+-- until the compact selector is dismissed, so do not let the player walk out
+-- of a target zone and select an option from that stale snapshot.
+local function setMenuPositionFrozen(frozen)
+    if frozen then
+        local ped = PlayerPedId()
+        if not ped or ped == 0 then return end
+
+        menuPed = ped
+        menuPedWasFrozen = IsEntityPositionFrozen(ped)
+        if not menuPedWasFrozen then FreezeEntityPosition(ped, true) end
+        return
+    end
+
+    if menuPed and not menuPedWasFrozen then FreezeEntityPosition(menuPed, false) end
+    menuPed, menuPedWasFrozen = nil, nil
+end
+
+local function closeTargetMenu()
+    if menuOpen then QB.interact.close() end
+    menuOpen = false
+    setMenuPositionFrozen(false)
+end
+
 -- Internal compatibility hook for qb-target's DisableTarget(true). That
 -- export cancels only the current targeting session; it does not change the
 -- persistent AllowTargeting gate. Keeping this separate from setEnabled is
 -- what lets the next key press start a fresh session, as upstream does.
 function Target._cancelCurrentTargeting()
     holding = false
+    closeTargetMenu()
     resetRuntimeState()
     Target.active = false
 end
@@ -453,12 +479,13 @@ local function selectCandidates(candidates)
 
     menuOpen = QB.interact.open(items)
     if not menuOpen then return end
+    setMenuPositionFrozen(true)
 
     CreateThread(function()
         while QB.interact.isActive() do
             Wait(0)
         end
-        menuOpen = false
+        closeTargetMenu()
     end)
 end
 
@@ -481,7 +508,7 @@ local function startTargeting()
             if not Target.enabled or menuOpen or Target.interactionsLocked() then
                 if Target.interactionsLocked() then
                     holding = false
-                    if menuOpen then QB.interact.close(); menuOpen = false end
+                    closeTargetMenu()
                 end
                 Target.active = false
                 resetRuntimeState()
@@ -584,7 +611,8 @@ end, false)
 
 AddEventHandler('onClientResourceStop', function(resource)
     if resource == GetCurrentResourceName() then
-        holding, menuOpen = false, false
+        holding = false
+        closeTargetMenu()
         resetRuntimeState()
     end
 end)
@@ -601,6 +629,7 @@ if Config.target.testMode then
         aimIsStatic = aimIsStatic,
         resetRuntimeState = resetRuntimeState,
         selectCandidates = selectCandidates,
+        closeTargetMenu = closeTargetMenu,
         resolveCandidates = resolveCandidates,
         candidateCount = function() return #currentCandidates end,
     }
