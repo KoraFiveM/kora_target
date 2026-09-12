@@ -21,22 +21,14 @@ Target = Target or {}
 -- caller-supplied setter. Registering that same event under the STRING
 -- "qb-target" instead of this resource's real name is what actually makes
 -- exports['qb-target']:Fn() reach code running here.
-local function provideExport(providedResource, exportName, func)
-    AddEventHandler(('__cfx_export_%s_%s'):format(providedResource, exportName), function(setCB)
-        setCB(func)
-    end)
-end
+local provideExport = QB.compat.provideExport
 
 -- A callback passed through an FXServer export boundary is represented as a
 -- table with an __call metamethod, not a Lua value whose type is "function".
 -- Banking's `action = function() OpenBank() end` reaches this bridge in that
 -- form, so accepting only plain functions made its visible target option a
 -- silent no-op when selected.
-local function isCallable(value)
-    if type(value) == 'function' then return true end
-    local mt = type(value) == 'table' and getmetatable(value) or nil
-    return mt ~= nil and mt.__call ~= nil
-end
+local isCallable = QB.util.isCallable
 
 local function dispatchLegacy(option, entity)
     local data = {}

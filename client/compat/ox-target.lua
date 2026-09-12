@@ -17,13 +17,8 @@ Target = Target or {}
 -- it's needed (`provide` in fxmanifest.lua alone doesn't make
 -- exports.ox_target:Fn() resolve here -- only registering the underlying
 -- __cfx_export_ox_target_<name> event does). Duplicated rather than shared:
--- separate Lua chunks can't share a local, same reasoning qblib's own
--- AGENTS.md gives for its small per-file helper duplicates.
-local function provideExport(providedResource, exportName, func)
-    AddEventHandler(('__cfx_export_%s_%s'):format(providedResource, exportName), function(setCB)
-        setCB(func)
-    end)
-end
+-- qblib publishes the identity bridge for compatibility providers in either realm.
+local provideExport = QB.compat.provideExport
 
 -- A callback passed through an FXServer export boundary is represented as a
 -- table with an __call metamethod, not a Lua value whose type is "function"
@@ -32,12 +27,8 @@ end
 -- `onSelect`/`action` reaching this bridge in that shape used to silently
 -- fall through to serverEvent/event/nothing, since `type(x) == 'function'`
 -- is false for it. Duplicated rather than shared for the same reason
--- provideExport is duplicated above (separate Lua chunks, no shared local).
-local function isCallable(value)
-    if type(value) == 'function' then return true end
-    local mt = type(value) == 'table' and getmetatable(value) or nil
-    return mt ~= nil and mt.__call ~= nil
-end
+-- qblib also centralizes callable funcref detection across export boundaries.
+local isCallable = QB.util.isCallable
 
 local function dispatchLegacy(option, entity)
     if isCallable(option.onSelect) then

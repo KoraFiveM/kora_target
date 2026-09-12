@@ -30,6 +30,11 @@ end
 local setDebugCalls = {}
 
 _G.QB = {
+    util = { isCallable = function(value)
+        if type(value) == 'function' then return true end
+        local mt = type(value) == 'table' and getmetatable(value) or nil
+        return mt ~= nil and mt.__call ~= nil
+    end },
     zones = {
         box = makeZoneHandle,
         sphere = makeZoneHandle,

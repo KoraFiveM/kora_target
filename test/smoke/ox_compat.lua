@@ -9,6 +9,14 @@ local exportsByEvent = {}
 _G.Config = { target = { debug = false, maxDistance = 10.0 } }
 
 _G.QB = {
+    util = { isCallable = function(value)
+        if type(value) == 'function' then return true end
+        local mt = type(value) == 'table' and getmetatable(value) or nil
+        return mt ~= nil and mt.__call ~= nil
+    end },
+    compat = { provideExport = function(identity, name, fn)
+        AddEventHandler(('__cfx_export_%s_%s'):format(identity, name), function(setCB) setCB(fn) end)
+    end },
     zones = {
         box = function() return { remove = function() end, contains = function() return false end } end,
         sphere = function() return { remove = function() end, contains = function() return false end } end,

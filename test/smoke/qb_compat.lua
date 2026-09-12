@@ -18,6 +18,14 @@ local function makeZoneHandle(opts)
 end
 
 _G.QB = {
+    util = { isCallable = function(value)
+        if type(value) == 'function' then return true end
+        local mt = type(value) == 'table' and getmetatable(value) or nil
+        return mt ~= nil and mt.__call ~= nil
+    end },
+    compat = { provideExport = function(identity, name, fn)
+        AddEventHandler(('__cfx_export_%s_%s'):format(identity, name), function(setCB) setCB(fn) end)
+    end },
     zones = {
         box = makeZoneHandle,
         sphere = makeZoneHandle,

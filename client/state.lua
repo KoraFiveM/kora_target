@@ -58,12 +58,8 @@ end
 -- as a table with a __call metamethod, not a plain Lua function -- a
 -- resource-local copy of the same check qblib's own modules use (see e.g.
 -- qblib/modules/zones/client.lua), since qbtarget is a separate resource
--- with its own separate Lua chunks and can't share qblib's local.
-local function isCallable(x)
-    if type(x) == "function" then return true end
-    local mt = type(x) == "table" and getmetatable(x) or nil
-    return mt ~= nil and mt.__call ~= nil
-end
+-- shared through qblib so every compatibility boundary recognizes the same shapes.
+local isCallable = QB.util.isCallable
 
 -- A "coords-like" value: a table with numeric x/y/z, satisfied by both a
 -- real vector3 and a plain {x=, y=, z=} table (both are accepted throughout
