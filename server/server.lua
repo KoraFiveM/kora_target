@@ -8,6 +8,13 @@
 ServerTarget = ServerTarget or {}
 
 local serverActions = {}
+local ENTITY_VALIDATION_MESSAGES = {
+    invalid_network_id = 'A networked target entity is required.',
+    entity_unavailable = 'Target entity no longer exists.',
+    player_unavailable = 'Player entity unavailable.',
+    routing_bucket_mismatch = 'Target is in another routing bucket.',
+    too_far = 'Too far from target.',
+}
 
 -- qblib's QB.callback module now forwards a handler's return values in full
 -- (multi-value returns end to end), so this replies with (ok, ...) directly
@@ -21,24 +28,9 @@ QB.callback.register('qbtarget:server:runAction', function(src, name, netId, _cl
         return false, ('Unknown qbtarget server action: %s'):format(tostring(name))
     end
 
-    if type(netId) ~= 'number' or netId <= 0 then
-        return false, 'A networked target entity is required.'
-    end
-
-    local entity = NetworkGetEntityFromNetworkId(netId)
-    if not entity or entity == 0 or not DoesEntityExist(entity) then
-        return false, 'Target entity no longer exists.'
-    end
-
-    local playerPed = GetPlayerPed(src)
-    if not playerPed or playerPed == 0 then return false, 'Player entity unavailable.' end
-    if GetPlayerRoutingBucket(src) ~= GetEntityRoutingBucket(entity) then
-        return false, 'Target is in another routing bucket.'
-    end
-
-    local distance = #(GetEntityCoords(playerPed) - GetEntityCoords(entity))
-    if distance > action.maxDistance then
-        return false, 'Too far from target.'
+    local entity, reason = QB.world.resolveNetworkEntity(src, netId, { maxDistance = action.maxDistance })
+    if not entity then
+        return false, ENTITY_VALIDATION_MESSAGES[reason] or 'Target entity is unavailable.'
     end
 
     local results = table.pack(pcall(action.handler, src, entity, ...))
