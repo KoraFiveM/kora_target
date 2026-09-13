@@ -195,6 +195,37 @@ harness.test('canInteract results are cached only for the short configured windo
     now = Config.target.canInteractCacheMs
     runtime.optionAllowed(registration, 1, option, 99, 1.0, now)
     harness.assertEqual(canInteractCalls, 2, 'expired result must be re-evaluated')
+    Config.target.canInteractCacheMs = 0
+    runtime.resetRuntimeState()
+end)
+
+harness.test('failed canInteract checks use a bounded cooldown', function()
+    local calls = 0
+    local registration = { id = 1000 }
+    local option = { label = 'Unavailable', canInteract = function() calls = calls + 1; return false end }
+
+    now = 0
+    harness.assertFalse(runtime.optionAllowed(registration, 1, option, 99, 1.0, now),
+        'the first failed check should reject the option')
+    now = Config.target.canInteractFailureCacheMs - 1
+    harness.assertFalse(runtime.optionAllowed(registration, 1, option, 99, 1.0, now),
+        'the failed result should remain unavailable during its cooldown')
+    harness.assertEqual(calls, 1, 'a failed check must not run on every resolver pass')
+
+    now = Config.target.canInteractFailureCacheMs
+    runtime.optionAllowed(registration, 1, option, 99, 1.0, now)
+    harness.assertEqual(calls, 2, 'a failed check must be retried after the bounded cooldown')
+    runtime.resetRuntimeState()
+end)
+
+harness.test('resolver waits longer when no entity or zone option was hit', function()
+    harness.assertEqual(runtime.resolverWait({}, nil), Config.target.tickMiss,
+        'an empty world hit should use the low-frequency miss cadence')
+    harness.assertEqual(runtime.resolverWait({}, 99), Config.target.tickAcquire,
+        'an aimed entity should retain the normal acquisition cadence')
+    harness.assertEqual(runtime.resolverWait({ true }, nil), Config.target.tickActive,
+        'an available zone option should retain the active cadence without an entity')
+    runtime.resetRuntimeState()
 end)
 
 harness.test('zone candidates are matched against the aim point, not the player position', function()

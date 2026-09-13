@@ -35,6 +35,7 @@ Config.target = {
     -- used by ox_target without tying expensive native work to every frame.
     tickAcquire = 50,              -- ms while held with no available option
     tickActive = 50,               -- ms while an option is visible
+    tickMiss = 100,                -- ms while held without an entity or available zone option
 
     -- Longest a held aim may reuse its previous scan while the camera AND the
     -- player ped are both bit-for-bit motionless (client/loop.lua's
@@ -47,9 +48,11 @@ Config.target = {
     -- latency to targeting something deliberately. Set 0 to disable.
     staticRefresh = 200,
     -- Default to no cache: third-party canInteract functions commonly depend
-    -- on rapidly-changing local state. Servers with purely static checks may
-    -- opt into a short cache after profiling.
+    -- on rapidly-changing local state. Successful checks therefore remain
+    -- fresh, while failed checks get a small cooldown so an unavailable option
+    -- does not invoke the same callback on every resolver pass.
     canInteractCacheMs = 0,
+    canInteractFailureCacheMs = 250,
 
     -- Prints a small per-hold profiler summary every diagnosticsInterval ms.
     -- Keep this off in production; it exists to make resmon investigations

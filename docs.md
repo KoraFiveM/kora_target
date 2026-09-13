@@ -15,9 +15,10 @@ Hold `Config.target.keybind` (default `LMENU`, i.e. left Alt) to enter targeting
 Targeting has no idle client thread while its key is up, and no targeting loop
 at all once it is released. The first scan happens immediately on activation;
 `tickAcquire` and `tickActive` both default to 50ms (20Hz) while targeting is
-held -- the resolver is deliberately **not** a per-frame loop, and raising its
-rate is almost never the right fix for a target that feels sluggish. Rendering
-stays every frame in a separate lightweight loop.
+held over an entity or available option. A miss with no entity or zone option
+uses `tickMiss` (100ms), reducing idle raycast work at the cost of a small,
+intentional acquisition delay. The resolver is deliberately **not** a
+per-frame loop. Rendering stays every frame in a separate lightweight loop.
 
 Each resolver tick fires a broad world raycast and an entity-focused one, so an
 entity standing behind a non-targetable world hit is never missed. Both are
@@ -38,12 +39,13 @@ reuses the previous scan instead of re-firing an identical ray.
 moving under a frozen crosshair is still picked up; any aim input at all
 resolves on the very next tick. Set it to `0` to disable reuse.
 
-`canInteractCacheMs` is disabled by default so dynamic foreign `canInteract`
-functions are always fresh; enable a small value only after profiling static
-checks. Set `diagnostics = true` temporarily to print per-hold resolver
-metrics, including how many ticks were skipped as static. The built-in global
-ped/vehicle demo is disabled by default and should only be enabled for
-development.
+Successful `canInteract` results are uncached by default so dynamic foreign
+callbacks remain fresh. Failed results use `canInteractFailureCacheMs` (250ms)
+to avoid repeatedly invoking an unavailable option, then retry so an external
+state change can surface it without requiring the player to aim away. Set
+`diagnostics = true` temporarily to print per-hold resolver metrics, including
+how many ticks were skipped as static. The built-in global ped/vehicle demo is
+disabled by default and should only be enabled for development.
 
 ## API
 All functions are plain FiveM exports on `qbtarget` — `exports.qbtarget:<name>(...)`. The same targets are also reachable through `exports['qb-target']:...` (PascalCase, qb-target's real function names) and `exports.ox_target:...` (camelCase, ox_target's real function names) — both are compatibility layers over this same API, not separate implementations.

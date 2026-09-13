@@ -2,6 +2,7 @@ Target = Target or {}
 
 local holding, holdingThread, menuOpen = false, false, false
 local currentCandidates = {}
+local currentRaycastEntity
 local menuPed, menuPedWasFrozen
 
 -- Runtime-only resolver state. This cache never decides authority; it simply
@@ -32,7 +33,7 @@ local lastResolveAt, lastCamX, lastCamY, lastCamZ, lastCamPitch, lastCamYaw = 0,
 local lastPedX, lastPedY, lastPedZ, lastResolveRevision
 
 local function resetRuntimeState()
-    currentCandidates, Target.hovering = {}, nil
+    currentCandidates, currentRaycastEntity, Target.hovering = {}, nil, nil
     Target.success = false
     entityRegistrationCache.entity, entityRegistrationCache.model = nil, nil
     entityRegistrationCache.entityType, entityRegistrationCache.revision = nil, nil
@@ -255,14 +256,16 @@ end
 local function optionAllowed(registration, optionIndex, option, entity, distance, now)
     if not option.canInteract then return true end
 
-    -- Config.target.canInteractCacheMs defaults to 0 (see config.lua): every
-    -- lookup then MISSES by definition, so building the key and storing the
-    -- result was pure overhead on the default configuration. Skip the cache
-    -- entirely rather than maintaining one nothing can read.
-    local cacheMs = Config.target.canInteractCacheMs
+    -- Successful checks remain uncached by default because third-party
+    -- callbacks often read rapidly-changing local state. Failed checks get a
+    -- short, separate cooldown: an unavailable option should not invoke the
+    -- same callback on every resolver pass, but it must still become available
+    -- while the player continues aiming when that external state changes.
+    local successCacheMs = Config.target.canInteractCacheMs or 0
+    local failureCacheMs = Config.target.canInteractFailureCacheMs or 0
     local key
 
-    if cacheMs > 0 then
+    if successCacheMs > 0 or failureCacheMs > 0 then
         key = ('%s:%s:%s:%s'):format(registration.id, optionIndex, entity or 0, math.floor(distance * 10))
         local cached = canInteractCache[key]
         if cached and now < cached.expiresAt then return cached.allowed end
@@ -273,10 +276,14 @@ local function optionAllowed(registration, optionIndex, option, entity, distance
     local allowed = ok and result ~= false
     if not ok then print(("[qbtarget] canInteract for option '%s' errored: %s"):format(option.label, tostring(result))) end
 
-    if key then
+    local cacheMs = allowed and successCacheMs or failureCacheMs
+    if key and cacheMs > 0 then
         if canInteractCache[key] == nil then canInteractCacheCount = canInteractCacheCount + 1 end
         canInteractCache[key] = { allowed = allowed, expiresAt = now + cacheMs }
         if canInteractCacheCount > CAN_INTERACT_CACHE_LIMIT then pruneCanInteractCache(now) end
+    elseif key and canInteractCache[key] then
+        canInteractCache[key] = nil
+        canInteractCacheCount = canInteractCacheCount - 1
     end
 
     return allowed
@@ -456,6 +463,12 @@ local function reportDiagnostics(now)
     diagnostics = { scans = 0, skipped = 0, raycasts = 0, options = 0, canInteract = 0, elapsed = 0, lastReport = now }
 end
 
+local function resolverWait()
+    if currentCandidates[1] then return Config.target.tickActive end
+    if currentRaycastEntity and currentRaycastEntity ~= 0 then return Config.target.tickAcquire end
+    return Config.target.tickMiss
+end
+
 local function runOption(candidate)
     local ok, err = pcall(candidate.option.onSelect, candidate.entity, candidate.option.data)
     if not ok then print(("[qbtarget] onSelect for option '%s' errored: %s"):format(candidate.option.label, tostring(err))) end
@@ -517,19 +530,19 @@ local function startTargeting()
                 Target.active = true
                 diagnostics.skipped = diagnostics.skipped + 1
                 reportDiagnostics(now)
-                Wait(currentCandidates[1] and Config.target.tickActive or Config.target.tickAcquire)
+                Wait(resolverWait())
             else
                 Target.active = true
                 local startedAt = now
                 diagnostics.raycasts = diagnostics.raycasts + 1
                 local hit, hitCoords, entity = raycastTarget()
+                currentRaycastEntity = entity
                 currentCandidates = resolveCandidates(hit, entity, hitCoords, now)
                 diagnostics.elapsed = diagnostics.elapsed + GetGameTimer() - startedAt
                 updateHoveringState(currentCandidates)
-                local hasCandidate = currentCandidates[1] ~= nil
                 syncTargetHud(true, currentCandidates)
                 reportDiagnostics(now)
-                Wait(hasCandidate and Config.target.tickActive or Config.target.tickAcquire)
+                Wait(resolverWait())
             end
         end
         resetRuntimeState()
@@ -631,6 +644,10 @@ if Config.target.testMode then
         selectCandidates = selectCandidates,
         closeTargetMenu = closeTargetMenu,
         resolveCandidates = resolveCandidates,
+        resolverWait = function(candidates, entity)
+            currentCandidates, currentRaycastEntity = candidates, entity
+            return resolverWait()
+        end,
         candidateCount = function() return #currentCandidates end,
     }
 end

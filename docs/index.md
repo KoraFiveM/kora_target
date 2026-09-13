@@ -244,9 +244,10 @@ The native `exports.qbtarget` API accepts these fields but deliberately leaves p
 Releasing `Config.target.keybind` runs the sole option or opens qblib's pointer-free
 interact selector for multiple options (scroll or Up/Down to choose, E to select). `Config.target.maxDistance`
 (10.0m raycast reach) and `defaultOptionDistance` (2.5m fallback interact
-distance). `tickAcquire`/`tickActive` (50ms resolver cadence while the key is
-held; no thread at all while released). `canInteractCacheMs` (0/disabled by
-default — enable only after profiling static checks). `debug` (global zone
+distance). `tickAcquire`/`tickActive` (50ms resolver cadence over an entity or
+available option), `tickMiss` (100ms when neither is hit; no thread at all while
+released), and `canInteractFailureCacheMs` (250ms retry cooldown for failed
+checks). Successful checks remain uncached by default. `debug` (global zone
 outline) and `diagnostics` (per-hold resolver metrics) both default to
 `false`. `sprites` controls the enabled-by-default, distance-culled zone
 location icons; `demo` (built-in global ped/vehicle demo targets) defaults to
