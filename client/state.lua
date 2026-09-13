@@ -807,6 +807,7 @@ function Target.addBoxZone(zoneOptions)
         size = zoneOptions.size,
         rotation = zoneOptions.rotation,
         debug = zoneDebugEnabled(zoneOptions),
+        trackPlayer = false,
     })
 
     registerZone(id, {
@@ -847,6 +848,7 @@ function Target.addSphereZone(zoneOptions)
         coords = zoneOptions.coords,
         radius = zoneOptions.radius,
         debug = zoneDebugEnabled(zoneOptions),
+        trackPlayer = false,
     })
 
     registerZone(id, {
@@ -893,6 +895,7 @@ function Target.addPolyZone(zoneOptions)
         minZ = zoneOptions.minZ,
         maxZ = zoneOptions.maxZ,
         debug = zoneDebugEnabled(zoneOptions),
+        trackPlayer = false,
     })
 
     registerZone(id, {
@@ -919,8 +922,10 @@ end
 ---@param defaultDistance? number
 ---@param spriteCoords? any
 ---@param drawSprite? boolean
+---@param bounds? table
+---@param targetEntity? number Only evaluate this zone when the raycast hit this entity.
 ---@return integer id
-function Target._addCustomZone(contains, options, defaultDistance, spriteCoords, drawSprite, bounds)
+function Target._addCustomZone(contains, options, defaultDistance, spriteCoords, drawSprite, bounds, targetEntity)
     assert(isCallable(contains), 'custom zone contains must be callable.')
     options = validateOptions(options)
     local id = nextId()
@@ -938,6 +943,7 @@ function Target._addCustomZone(contains, options, defaultDistance, spriteCoords,
         zoneHandle = zoneHandle,
         spriteCoords = spriteCoords,
         drawSprite = spriteCoords ~= nil and drawSprite ~= false,
+        targetEntity = targetEntity,
     }, bounds)
     Target.ownership.track(owner, id)
     return id

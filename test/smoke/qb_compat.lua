@@ -282,6 +282,31 @@ harness.test('AddComboZone registers one qbtarget zone per sub-zone definition',
     harness.assertTrue(Target.registrations[combo.ids[2]] ~= nil, 'second combo sub-zone must be registered')
 end)
 
+harness.test('stable combo children are indexed instead of scanned globally', function()
+    _G.ComboZone = {
+        Create = function(_, zones)
+            return { zones = zones, destroy = function() end }
+        end,
+    }
+    local child = {
+        type = 'box',
+        coords = { x = 10, y = 20, z = 30 },
+        length = 2,
+        width = 2,
+        options = { minZ = 29, maxZ = 31 },
+        isPointInside = function() return false end,
+    }
+    local combo = addComboZone({ child }, { name = 'bounded-combo' }, opts('Bounded Combo'))
+    _G.ComboZone = nil
+
+    local nearby = {}
+    Target.zonesNear({ x = 1000, y = 1000, z = 30 }, nearby)
+    for _, id in ipairs(nearby) do
+        harness.assertTrue(id ~= combo.ids[1], 'a far stable combo child must be excluded by the spatial grid')
+    end
+    combo:destroy()
+end)
+
 harness.test('RemoveZone tears down every sub-zone of a combo registration', function()
     local zone = { isPointInside = function() return false end }
     local combo = addComboZone({ zone, zone }, { name = 'combo-remove' }, opts('Combo Remove'))
@@ -298,6 +323,8 @@ harness.test('AddEntityZone follows the entity instead of snapshotting its initi
     local registration = Target.registrations[zone.ids[1]]
     harness.assertTrue(registration ~= nil, 'AddEntityZone must register')
     harness.assertEqual(registration.kind, 'zone', 'AddEntityZone must retain zone containment semantics')
+    harness.assertEqual(registration.targetEntity, 99,
+        'AddEntityZone should be rejected before containment when another entity is aimed at')
     harness.assertTrue(zone:isPointInside({ x = 10, y = 20, z = 100 }),
         'an EntityZone without useZ must contain points over its current footprint')
     entityCoords[99] = { x = 50, y = 60, z = 30 }

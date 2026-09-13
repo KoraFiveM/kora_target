@@ -42,12 +42,10 @@ _G.QB = {
         setDebug = function(id, enabled) setDebugCalls[#setDebugCalls + 1] = { id, enabled } end,
     },
     drawing = { text3d = function() end },
-    -- client/loop.lua starts both probes before awaiting either (so the
-    -- engine settles them in the same frame), so the stub has to model a
-    -- handle: flags are recorded at START time and the queued response is
-    -- claimed then, not when the caller gets round to awaiting it.
+    -- The stub models qblib's asynchronous ray handle: flags are recorded at
+    -- start time and the queued response is claimed before it is awaited.
     raycast = {
-        startFromCamera = function(_, flags)
+        start = function(_, _, flags)
             raycastFlags[#raycastFlags + 1] = flags
             raycastProbes[#raycastProbes + 1] = table.remove(raycastResponses, 1) or { false }
             return #raycastProbes
@@ -228,6 +226,21 @@ harness.test('resolver waits longer when no entity or zone option was hit', func
     runtime.resetRuntimeState()
 end)
 
+harness.test('entity-scoped custom zones skip containment for unrelated raycast hits', function()
+    local calls = 0
+    local id = Target._addCustomZone(function() calls = calls + 1; return true end,
+        {{ label = 'Entity zone', onSelect = function() end }}, 10, nil, false, nil, 99)
+
+    local point = { x = 0, y = 0, z = 0 }
+    harness.assertEqual(#runtime.zoneRegistrationsAt(point, point, 42), 0,
+        'an unrelated entity hit must reject the entity zone before containment')
+    harness.assertEqual(calls, 0, 'an unrelated entity must not run the moving-zone predicate')
+    harness.assertEqual(#runtime.zoneRegistrationsAt(point, point, 99), 1,
+        'the entity zone must remain available when its own entity is hit')
+    harness.assertEqual(calls, 1, 'the matching entity should run containment once')
+    Target.destroyRegistration(id)
+end)
+
 harness.test('zone candidates are matched against the aim point, not the player position', function()
     Target.addBoxZone({
         coords = { x = 5, y = 0, z = 0 },
@@ -292,6 +305,8 @@ end)
 harness.test('zone candidates require an actual raycast hit', function()
     local candidates = runtime.resolveCandidates(false, nil, nil, now)
     harness.assertEqual(#candidates, 0, 'no raycast hit means no aim point to test zones against')
+    local reused = runtime.resolveCandidates(false, nil, nil, now + 1)
+    harness.assertTrue(reused == candidates, 'resolver passes in one hold should reuse their candidate array')
 end)
 
 harness.test('bone lookups are memoized within one resolver pass', function()
@@ -320,6 +335,19 @@ harness.test('entity-focused fallback raycast finds a target when the broad cast
     harness.assertEqual(raycastFlags[1], 511, 'broad raycast should use the world mask first')
     harness.assertEqual(raycastFlags[2], 26, 'entity-focused mask should be attempted second')
     harness.assertEqual(coords.x, 1, 'fallback hit coordinates should be preserved')
+end)
+
+harness.test('entity-focused fallback raycasts are rate limited', function()
+    now = now + 1
+    raycastFlags, raycastProbes, raycastResponses = {}, {}, {
+        { false, nil, nil },
+        { true, { x = 1, y = 0, z = 0 }, 99 },
+    }
+
+    local hit = runtime.raycastTarget()
+    harness.assertFalse(hit, 'the broad miss should be returned while fallback is cooling down')
+    harness.assertEqual(#raycastFlags, 1, 'the fallback shape test must not run on every broad miss')
+    raycastResponses = {}
 end)
 
 harness.test('a stale raycast entity is ignored instead of reaching GetEntityModel', function()
@@ -544,15 +572,15 @@ harness.test('a motionless camera and ped let a tick reuse the previous resolve,
     now = 1030
     harness.assertTrue(runtime.aimIsStatic(now), 'holding still again resumes reuse')
 
-    now = 1020 + Config.target.staticRefresh
+    now = 1020 + Config.target.staticMissRefresh
     harness.assertFalse(runtime.aimIsStatic(now),
-        'staticRefresh caps how long a frozen crosshair can go without a real scan')
+        'staticMissRefresh caps how long a frozen empty aim can go without a real scan')
 
-    local previous = Config.target.staticRefresh
-    Config.target.staticRefresh = 0
+    local previous = Config.target.staticMissRefresh
+    Config.target.staticMissRefresh = 0
     now = now + 1
-    harness.assertFalse(runtime.aimIsStatic(now), 'staticRefresh = 0 disables reuse entirely')
-    Config.target.staticRefresh = previous
+    harness.assertFalse(runtime.aimIsStatic(now), 'staticMissRefresh = 0 disables miss reuse entirely')
+    Config.target.staticMissRefresh = previous
 end)
 
 harness.report('qbtarget runtime')

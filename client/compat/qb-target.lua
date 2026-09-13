@@ -373,9 +373,9 @@ end
 -- of their public methods) while attaching qbtarget registration lifecycle.
 -- The plain-Lua smoke harness has no PolyZone globals and exercises the exact
 -- standalone predicates below instead.
-local function trackPolyZoneObject(name, kind, zone, targetOptions, distance, spriteCoords, drawSprite, bounds)
+local function trackPolyZoneObject(name, kind, zone, targetOptions, distance, spriteCoords, drawSprite, bounds, targetEntity)
     local id = Target._addCustomZone(function(point) return zone:isPointInside(point) end,
-        translateOptions(optionsMap(targetOptions.options, distance)), distance, spriteCoords, drawSprite, bounds)
+        translateOptions(optionsMap(targetOptions.options, distance)), distance, spriteCoords, drawSprite, bounds, targetEntity)
     local shapeDestroy = zone.destroy
     zone.name, zone.kind, zone.ids = name, kind, { id }
     zone.targetoptions = targetOptions
@@ -436,6 +436,18 @@ local function legacyPolyBounds(points, boxOpts)
 
     return Target._zoneBounds((minX + maxX) / 2, (minY + maxY) / 2,
         (maxX - minX) / 2, (maxY - minY) / 2, boxOpts.minZ, boxOpts.maxZ)
+end
+
+local function comboChildBounds(zone)
+    if zone.type == 'box' and zone.coords and zone.length and zone.width then
+        return legacyBoxBounds(zone.coords, zone.length, zone.width, zone.options or {})
+    end
+    if zone.type == 'poly' and zone.points then
+        return legacyPolyBounds(zone.points, { minZ = zone.minZ, maxZ = zone.maxZ })
+    end
+    -- CircleZone exposes live setCenter/setRadius methods, so indexing its
+    -- current extent would become stale after a mutation. Keep it unbounded.
+    return nil
 end
 
 local function boxScaleOffset(boxOpts)
@@ -636,8 +648,30 @@ local function AddComboZone(zones, options, targetOptions)
     local distance = legacyDistance(targetOptions.distance)
     targetOptions.distance = distance
     if ComboZone and isCallable(ComboZone.Create) then
-        return trackPolyZoneObject(name, 'combo', ComboZone:Create(zones, options),
-            targetOptions, distance, nil, false)
+        local combo = ComboZone:Create(zones, options)
+        local mapped = optionsMap(targetOptions.options, distance)
+        local ids = {}
+        for i, zone in ipairs(zones) do
+            ids[i] = Target._addCustomZone(function(point) return zone:isPointInside(point) end,
+                translateOptions(mapped), distance, nil, false, comboChildBounds(zone))
+        end
+
+        local shapeDestroy = combo.destroy
+        combo.name, combo.kind, combo.ids = name, 'combo', ids
+        combo.targetoptions = targetOptions
+        combo.owner = GetInvokingResource() or GetCurrentResourceName()
+        combo._qbtargetDestroyed = false
+        combo.destroy = function(self)
+            if self._qbtargetDestroyed then return end
+            self._qbtargetDestroyed = true
+            if zonesByName[self.name] == self then zonesByName[self.name] = nil end
+            for _, id in ipairs(ids) do
+                if Target.registrations[id] then Target.destroyRegistration(id) end
+            end
+            if isCallable(shapeDestroy) then shapeDestroy(self) end
+        end
+        zonesByName[name] = combo
+        return combo
     end
     local mapped = optionsMap(targetOptions.options, distance)
 
@@ -669,7 +703,7 @@ local function AddEntityZone(name, entity, boxOpts, targetOptions)
     targetOptions.distance = distance
     if EntityZone and isCallable(EntityZone.Create) then
         return trackPolyZoneObject(name, 'entity', EntityZone:Create(entity, boxOpts),
-            targetOptions, distance, nil, false)
+            targetOptions, distance, nil, false, nil, entity)
     end
     local mapped = optionsMap(targetOptions.options, distance)
 
@@ -717,7 +751,8 @@ local function AddEntityZone(name, entity, boxOpts, targetOptions)
         local worldMinZ, worldMaxZ = entityZBounds()
         return point.z >= worldMinZ and point.z <= worldMaxZ
     end
-    local id = Target._addCustomZone(contains, translateOptions(mapped), distance, GetEntityCoords(entity), false)
+    local id = Target._addCustomZone(contains, translateOptions(mapped), distance,
+        GetEntityCoords(entity), false, nil, entity)
     return legacyZone(name, 'entity', { id }, targetOptions, {
         entity = entity, dimensions = { minimum, maximum }, useZ = boxOpts.useZ == true, isEntityZone = true,
     })

@@ -25,9 +25,8 @@ Config.target = {
     boneTolerance = 0.35,          -- meters; how close a raycast hit must land to a candidate bone to count as a match
 
     -- Adaptive target-loop cadence. A scan happens immediately when targeting
-    -- starts. It then polls slowly while no option is available, but renders
-    -- and resolves every frame while an option is visible so target changes
-    -- still feel immediate.
+    -- starts. It then polls slowly while no option is available and keeps a
+    -- 20Hz resolver cadence while an option is visible.
     tickIdle = 150,                -- ms while targeting is disabled
     -- Resolver cadence while Alt is held. Prompt/reticle rendering remains
     -- frame-perfect in a separate lightweight loop; raycasts and option
@@ -36,6 +35,8 @@ Config.target = {
     tickAcquire = 50,              -- ms while held with no available option
     tickActive = 50,               -- ms while an option is visible
     tickMiss = 100,                -- ms while held without an entity or available zone option
+    staticMissRefresh = 500,       -- max ms between real scans while a miss remains perfectly motionless
+    entityProbeInterval = 250,     -- ms between entity-only fallback rays when the broad ray reports no entity
 
     -- Longest a held aim may reuse its previous scan while the camera AND the
     -- player ped are both bit-for-bit motionless (client/loop.lua's

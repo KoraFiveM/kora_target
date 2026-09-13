@@ -2,6 +2,7 @@ Target = Target or {}
 
 local holding, holdingThread, menuOpen = false, false, false
 local currentCandidates = {}
+local candidatePool = {}
 local currentRaycastEntity
 local menuPed, menuPedWasFrozen
 
@@ -9,7 +10,7 @@ local menuPed, menuPedWasFrozen
 -- avoids resolving the same world/registration combination more often than a
 -- player can perceive it.
 local entityRegistrationCache = { entity = nil, model = nil, entityType = nil, revision = nil, registrations = {} }
-local canInteractCache, canInteractCacheCount = {}, 0
+local canInteractCache = {}
 local emptyRegistrations = {}
 local syncTargetHud
 local diagnostics = { scans = 0, skipped = 0, raycasts = 0, options = 0, canInteract = 0, elapsed = 0, lastReport = 0 }
@@ -17,9 +18,9 @@ local diagnostics = { scans = 0, skipped = 0, raycasts = 0, options = 0, canInte
 -- The last snapshot syncTargetHud pushed to the NUI. See syncTargetHud below.
 local hudActive, hudRegistrationId, hudEntity, hudOption, hudOptionCount = false, nil, nil, nil, 0
 
--- Reused scratch. resolveCandidates deliberately still allocates its own
--- `candidates` array per pass: the release handler captures that exact table
--- and hands it to an async menu, so it must not be written to again.
+-- Reused scratch. Candidate objects are stable for the lifetime of one target
+-- hold; resetRuntimeState swaps them out before a captured release selection
+-- can overlap a later hold.
 local zoneCandidateIds = {}
 local zoneCandidates = {}
 local boneCache = {}
@@ -38,7 +39,8 @@ local function resetRuntimeState()
     entityRegistrationCache.entity, entityRegistrationCache.model = nil, nil
     entityRegistrationCache.entityType, entityRegistrationCache.revision = nil, nil
     entityRegistrationCache.registrations = {}
-    canInteractCache, canInteractCacheCount = {}, 0
+    canInteractCache = {}
+    candidatePool = {}
     lastResolveAt, lastResolveRevision = 0, nil
     lastCamX, lastCamY, lastCamZ, lastCamPitch, lastCamYaw = nil, nil, nil, nil, nil
     lastPedX, lastPedY, lastPedZ = nil, nil, nil
@@ -210,7 +212,7 @@ end
 --     (the qb-target ComboZone/EntityZone bridges) stay in the scan.
 ---@param point table Raycast hit coordinates.
 ---@param pedCoords table? Player position; omit to skip filter 1.
-local function zoneRegistrationsAt(point, pedCoords)
+local function zoneRegistrationsAt(point, pedCoords, aimedEntity)
     if next(Target.byZone) == nil then return emptyRegistrations end
 
     if pedCoords then
@@ -227,30 +229,13 @@ local function zoneRegistrationsAt(point, pedCoords)
 
     for i = 1, #ids do
         local registration = Target.registrations[ids[i]]
-        if registration and registration.zoneHandle.contains(point) then
+        if registration and (not registration.targetEntity or registration.targetEntity == aimedEntity)
+            and registration.zoneHandle.contains(point) then
             registrations[#registrations + 1] = registration
         end
     end
 
     return registrations
-end
-
--- Entries are keyed partly on a distance bucket, so simply walking towards a
--- target mints a fresh key every tenth of a metre. Left unbounded the cache
--- grew for the entire hold -- pure garbage behind a lookup that can never hit
--- again. Sweep the expired entries once it gets large instead.
-local CAN_INTERACT_CACHE_LIMIT = 256
-
-local function pruneCanInteractCache(now)
-    local remaining = 0
-    for key, entry in pairs(canInteractCache) do
-        if now >= entry.expiresAt then
-            canInteractCache[key] = nil
-        else
-            remaining = remaining + 1
-        end
-    end
-    canInteractCacheCount = remaining
 end
 
 local function optionAllowed(registration, optionIndex, option, entity, distance, now)
@@ -263,46 +248,60 @@ local function optionAllowed(registration, optionIndex, option, entity, distance
     -- while the player continues aiming when that external state changes.
     local successCacheMs = Config.target.canInteractCacheMs or 0
     local failureCacheMs = Config.target.canInteractFailureCacheMs or 0
-    local key
-
     if successCacheMs > 0 or failureCacheMs > 0 then
-        key = ('%s:%s:%s:%s'):format(registration.id, optionIndex, entity or 0, math.floor(distance * 10))
-        local cached = canInteractCache[key]
-        if cached and now < cached.expiresAt then return cached.allowed end
+        local cached = canInteractCache[option]
+        local distanceBucket = math.floor(distance * 10)
+        if cached and cached.registrationId == registration.id and cached.optionIndex == optionIndex
+            and cached.entity == entity and cached.distanceBucket == distanceBucket
+            and now < cached.expiresAt then
+            return cached.allowed
+        end
     end
 
-    diagnostics.canInteract = diagnostics.canInteract + 1
+    if Config.target.diagnostics then diagnostics.canInteract = diagnostics.canInteract + 1 end
     local ok, result = pcall(option.canInteract, entity, distance, option.data)
     local allowed = ok and result ~= false
     if not ok then print(("[qbtarget] canInteract for option '%s' errored: %s"):format(option.label, tostring(result))) end
 
     local cacheMs = allowed and successCacheMs or failureCacheMs
-    if key and cacheMs > 0 then
-        if canInteractCache[key] == nil then canInteractCacheCount = canInteractCacheCount + 1 end
-        canInteractCache[key] = { allowed = allowed, expiresAt = now + cacheMs }
-        if canInteractCacheCount > CAN_INTERACT_CACHE_LIMIT then pruneCanInteractCache(now) end
-    elseif key and canInteractCache[key] then
-        canInteractCache[key] = nil
-        canInteractCacheCount = canInteractCacheCount - 1
+    if cacheMs > 0 then
+        canInteractCache[option] = {
+            registrationId = registration.id,
+            optionIndex = optionIndex,
+            entity = entity,
+            distanceBucket = math.floor(distance * 10),
+            allowed = allowed,
+            expiresAt = now + cacheMs,
+        }
+    else
+        canInteractCache[option] = nil
     end
 
     return allowed
 end
 
-local function appendCandidates(candidates, nearestIndex, registration, entity, anchorCoords, pedCoords, now, boneCache)
+local function appendCandidates(candidates, nearestIndex, registration, entity, anchorCoords,
+    distSq, toleranceSq, now, boneCache)
     local registrationBones = registration.kind == 'globalBone' and Target.byGlobalBone[registration.id] or nil
-    local distSq, toleranceSq = distanceSq(pedCoords, anchorCoords), Config.target.boneTolerance * Config.target.boneTolerance
+    local distance
 
     for index, option in ipairs(registration.options) do
-        diagnostics.options = diagnostics.options + 1
+        if Config.target.diagnostics then diagnostics.options = diagnostics.options + 1 end
         local maxDistance = option.distance or registration.distance or Config.target.defaultOptionDistance
         if distSq <= maxDistance * maxDistance and boneMatches(entity, option.bones or registrationBones, anchorCoords, toleranceSq, boneCache) then
             -- canInteract receives distance for compatibility; pay the sqrt only
             -- after all cheap rejections have passed.
-            local distance = math.sqrt(distSq)
+            distance = distance or math.sqrt(distSq)
             if optionAllowed(registration, index, option, entity, distance, now) then
-                candidates[#candidates + 1] = { registration = registration, option = option, entity = entity, anchorCoords = anchorCoords, distance = distance, distanceSq = distSq }
-                local candidateIndex = #candidates
+                local candidateIndex = #candidates + 1
+                local candidate = candidatePool[candidateIndex]
+                if not candidate then
+                    candidate = {}
+                    candidatePool[candidateIndex] = candidate
+                end
+                candidate.registration, candidate.option, candidate.entity = registration, option, entity
+                candidate.anchorCoords, candidate.distance, candidate.distanceSq = anchorCoords, distance, distSq
+                candidates[candidateIndex] = candidate
                 if not nearestIndex or distSq < candidates[nearestIndex].distanceSq then nearestIndex = candidateIndex end
             end
         end
@@ -310,8 +309,8 @@ local function appendCandidates(candidates, nearestIndex, registration, entity, 
     return nearestIndex
 end
 
-local function resolveCandidates(hit, entity, hitCoords, now)
-    diagnostics.scans = diagnostics.scans + 1
+local function resolveCandidates(hit, entity, hitCoords, now, pedCoords)
+    if Config.target.diagnostics then diagnostics.scans = diagnostics.scans + 1 end
     -- Stamped here rather than at the call site so aimIsStatic's staleness cap
     -- is anchored to the resolve that actually happened.
     lastResolveAt = now
@@ -320,19 +319,24 @@ local function resolveCandidates(hit, entity, hitCoords, now)
     -- the whole hold, and clearing the handful of keys it holds is cheaper
     -- than allocating.
     for cachedEntity in pairs(boneCache) do boneCache[cachedEntity] = nil end
-    local pedCoords, candidates, nearestIndex = GetEntityCoords(PlayerPedId()), {}, nil
+    pedCoords = pedCoords or GetEntityCoords(PlayerPedId())
+    local candidates, oldCount, nearestIndex = currentCandidates, #currentCandidates, nil
+    for i = 1, oldCount do candidates[i] = nil end
+    local hitDistanceSq = hitCoords and distanceSq(pedCoords, hitCoords) or 0.0
+    local toleranceSq = Config.target.boneTolerance * Config.target.boneTolerance
     if hit and entity and entity ~= 0 then
         for _, registration in ipairs(entityRegistrations(entity)) do
-            nearestIndex = appendCandidates(candidates, nearestIndex, registration, entity, hitCoords, pedCoords, now, boneCache)
+            nearestIndex = appendCandidates(candidates, nearestIndex, registration, entity, hitCoords,
+                hitDistanceSq, toleranceSq, now, boneCache)
         end
     end
     if hit and hitCoords then
-        for _, registration in ipairs(zoneRegistrationsAt(hitCoords, pedCoords)) do
+        for _, registration in ipairs(zoneRegistrationsAt(hitCoords, pedCoords, entity)) do
             -- qb-target passes the raycast entity through zone canInteract /
             -- action payloads as well; it may be nil/0 when the zone point is
             -- world geometry.
             nearestIndex = appendCandidates(candidates, nearestIndex, registration,
-                entity and entity ~= 0 and entity or nil, hitCoords, pedCoords, now, boneCache)
+                entity and entity ~= 0 and entity or nil, hitCoords, hitDistanceSq, toleranceSq, now, boneCache)
         end
     end
     -- Keep the closest candidate first without sorting every option.
@@ -345,30 +349,45 @@ end
 -- reports no entity. The closer hit always wins, so this never targets through
 -- a nearer obstruction.
 --
--- Both probes are STARTED before either is awaited (QB.raycast.startFromCamera
--- was added to qblib for exactly this). The engine settles shape tests once
--- per frame, so the previous await-then-fire ordering spent two frames -- and
--- two thread wake-ups -- per tick to learn what one frame already knew.
--- Starting them together halves both. The second probe is started
--- unconditionally rather than only when the first reports no entity: a shape
--- test costs far less than the extra frame that deciding first would cost,
--- and when the broad probe does find an entity the second result is simply
--- never read.
-local function raycastTarget()
-    local broadProbe = QB.raycast.startFromCamera(Config.target.maxDistance, 511)
-    local entityProbe = QB.raycast.startFromCamera(Config.target.maxDistance, 26)
+-- The broad probe runs every real scan. The entity-only fallback is rate
+-- limited and only starts after a broad result without an entity, trading an
+-- occasional extra settle frame for substantially fewer shape tests while a
+-- held crosshair points at ordinary world geometry. Both casts share one
+-- camera/ped snapshot, so they trace the same ray without duplicate natives.
+local lastEntityProbeAt = -math.huge
+local aimState = { destination = {} }
 
+local function aimSnapshot()
+    local ped = PlayerPedId()
+    local cam, rot = GetGameplayCamCoord(), GetGameplayCamRot(2)
+    local pitch, yaw = math.rad(rot.x), math.rad(rot.z)
+    local flatLength = math.abs(math.cos(pitch))
+    local distance = Config.target.maxDistance
+    aimState.ped, aimState.pedCoords = ped, GetEntityCoords(ped)
+    aimState.cam, aimState.rot = cam, rot
+    aimState.destination.x = cam.x - math.sin(yaw) * flatLength * distance
+    aimState.destination.y = cam.y + math.cos(yaw) * flatLength * distance
+    aimState.destination.z = cam.z + math.sin(pitch) * distance
+    return aimState
+end
+
+local function raycastTarget(snapshot, now)
+    snapshot = snapshot or aimSnapshot()
+    now = now or GetGameTimer()
+    local broadProbe = QB.raycast.start(snapshot.cam, snapshot.destination, 511, snapshot.ped)
     local hit, hitCoords, entity = QB.raycast.await(broadProbe)
     if entity and entity ~= 0 then return hit, hitCoords, entity end
 
-    -- Already settled -- it was started in the same frame the await above
-    -- waited out -- so this second await never yields.
+    local interval = Config.target.entityProbeInterval or 0
+    if interval > 0 and now - lastEntityProbeAt < interval then return hit, hitCoords, entity end
+    lastEntityProbeAt = now
+    local entityProbe = QB.raycast.start(snapshot.cam, snapshot.destination, 26, snapshot.ped)
+
     local entityHit, entityCoords, entityHandle = QB.raycast.await(entityProbe)
     if not (entityHit and entityHandle and entityHandle ~= 0) then return hit, hitCoords, entity end
     if not hit or not hitCoords then return entityHit, entityCoords, entityHandle end
 
-    local pedCoords = GetEntityCoords(PlayerPedId())
-    if distanceSq(pedCoords, entityCoords) <= distanceSq(pedCoords, hitCoords) then
+    if distanceSq(snapshot.pedCoords, entityCoords) <= distanceSq(snapshot.pedCoords, hitCoords) then
         return entityHit, entityCoords, entityHandle
     end
 
@@ -431,15 +450,17 @@ end
 -- drifting -- changes these floats and resolves immediately, so this can only
 -- ever engage while the player is genuinely holding still. What it cannot see
 -- is the world moving under a static crosshair (a ped walking into it), which
--- is why it is capped: Config.target.staticRefresh is the longest a held aim
--- can go without a real scan regardless.
+-- is why it is capped. Empty misses use the longer staticMissRefresh; aimed
+-- entities and options retain the more responsive staticRefresh.
 ---@return boolean skip True when this tick can reuse the previous resolve.
-local function aimIsStatic(now)
-    local staticRefresh = Config.target.staticRefresh
+local function aimIsStatic(now, snapshot)
+    local hasAimTarget = currentCandidates[1] ~= nil
+        or currentRaycastEntity ~= nil and currentRaycastEntity ~= 0
+    local staticRefresh = hasAimTarget and Config.target.staticRefresh or Config.target.staticMissRefresh
     if not staticRefresh or staticRefresh <= 0 then return false end
 
-    local cam, rot = GetGameplayCamCoord(), GetGameplayCamRot(2)
-    local ped = GetEntityCoords(PlayerPedId())
+    snapshot = snapshot or aimSnapshot()
+    local cam, rot, ped = snapshot.cam, snapshot.rot, snapshot.pedCoords
     local revision = Target.registrationRevision
 
     local unchanged = lastCamX == cam.x and lastCamY == cam.y and lastCamZ == cam.z
@@ -526,23 +547,28 @@ local function startTargeting()
                 Target.active = false
                 resetRuntimeState()
                 Wait(Config.target.tickIdle)
-            elseif aimIsStatic(now) then
-                Target.active = true
-                diagnostics.skipped = diagnostics.skipped + 1
-                reportDiagnostics(now)
-                Wait(resolverWait())
             else
-                Target.active = true
-                local startedAt = now
-                diagnostics.raycasts = diagnostics.raycasts + 1
-                local hit, hitCoords, entity = raycastTarget()
-                currentRaycastEntity = entity
-                currentCandidates = resolveCandidates(hit, entity, hitCoords, now)
-                diagnostics.elapsed = diagnostics.elapsed + GetGameTimer() - startedAt
-                updateHoveringState(currentCandidates)
-                syncTargetHud(true, currentCandidates)
-                reportDiagnostics(now)
-                Wait(resolverWait())
+                local snapshot = aimSnapshot()
+                if aimIsStatic(now, snapshot) then
+                    Target.active = true
+                    if Config.target.diagnostics then diagnostics.skipped = diagnostics.skipped + 1 end
+                    reportDiagnostics(now)
+                    Wait(resolverWait())
+                else
+                    Target.active = true
+                    local startedAt = now
+                    if Config.target.diagnostics then diagnostics.raycasts = diagnostics.raycasts + 1 end
+                    local hit, hitCoords, entity = raycastTarget(snapshot, now)
+                    currentRaycastEntity = entity
+                    currentCandidates = resolveCandidates(hit, entity, hitCoords, now, snapshot.pedCoords)
+                    if Config.target.diagnostics then
+                        diagnostics.elapsed = diagnostics.elapsed + GetGameTimer() - startedAt
+                    end
+                    updateHoveringState(currentCandidates)
+                    syncTargetHud(true, currentCandidates)
+                    reportDiagnostics(now)
+                    Wait(resolverWait())
+                end
             end
         end
         resetRuntimeState()

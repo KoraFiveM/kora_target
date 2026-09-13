@@ -20,29 +20,32 @@ uses `tickMiss` (100ms), reducing idle raycast work at the cost of a small,
 intentional acquisition delay. The resolver is deliberately **not** a
 per-frame loop. Rendering stays every frame in a separate lightweight loop.
 
-Each resolver tick fires a broad world raycast and an entity-focused one, so an
-entity standing behind a non-targetable world hit is never missed. Both are
-started before either is awaited: the engine settles shape tests once per
-frame, so firing them together costs one frame instead of two.
+Each real scan fires one broad world raycast. When it reports no entity, an
+entity-focused fallback can still handle engine edge cases, but
+`entityProbeInterval` limits that second shape test to once every 250ms. The
+fallback may add one settle frame when it is needed. Both casts reuse the same
+camera and player snapshot rather than repeating those native calls.
 
 Zone matching runs each registered zone's own `contains(point)` test against
 that tick's raycast hit, but only for zones that can possibly match. Two exact
 filters run first -- the ped-to-aim-point distance against the largest interact
 distance any zone option uses, then an AABB grid keyed on the aim point -- so
-adding zones does not make holding the key more expensive. Neither filter can
-change which zones match; a zone whose extent cannot be derived (a qb-target
-`AddComboZone`/`AddEntityZone`) is simply always tested.
+adding zones does not make holding the key more expensive. Stable box/poly
+children of qb-target combo zones are indexed individually. Entity zones are
+rejected before containment unless their own entity was hit. Shapes whose
+extent can change or cannot safely be derived remain unbounded.
 
 While the camera and the player ped are both completely motionless, a tick
 reuses the previous scan instead of re-firing an identical ray.
-`staticRefresh` (default 200ms) caps how long that can go on, so the world
-moving under a frozen crosshair is still picked up; any aim input at all
-resolves on the very next tick. Set it to `0` to disable reuse.
+`staticRefresh` (default 200ms) caps that delay over an entity or option;
+`staticMissRefresh` allows an empty, motionless aim to reuse its miss for 500ms.
+Any aim or player movement resolves on the next tick.
 
 Successful `canInteract` results are uncached by default so dynamic foreign
 callbacks remain fresh. Failed results use `canInteractFailureCacheMs` (250ms)
 to avoid repeatedly invoking an unavailable option, then retry so an external
-state change can surface it without requiring the player to aim away. Set
+state change can surface it without requiring the player to aim away. Cache
+entries use option identity rather than allocating formatted string keys. Set
 `diagnostics = true` temporarily to print per-hold resolver metrics, including
 how many ticks were skipped as static. The built-in global ped/vehicle demo is
 disabled by default and should only be enabled for development.
