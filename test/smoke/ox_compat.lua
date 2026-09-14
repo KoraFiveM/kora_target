@@ -9,6 +9,7 @@ local exportsByEvent = {}
 _G.Config = { target = { debug = false, maxDistance = 10.0 } }
 
 _G.QB = {
+    resources = {},
     util = { isCallable = function(value)
         if type(value) == 'function' then return true end
         local mt = type(value) == 'table' and getmetatable(value) or nil
@@ -32,6 +33,7 @@ _G.vector3 = function(x, y, z) return { x = x, y = y, z = z } end
 local networkEntities = {}
 _G.NetworkGetEntityFromNetworkId = function(netId) return networkEntities[netId] end
 
+dofile(resourceRoot .. '../qblib/local/resources/client.lua')
 dofile(resourceRoot .. 'client/state.lua')
 dofile(resourceRoot .. 'client/compat/ox-target.lua')
 

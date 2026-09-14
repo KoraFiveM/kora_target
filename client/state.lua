@@ -522,65 +522,11 @@ function Target.destroyRegistration(id)
     end
 end
 
--- Ownership: which resource registered a target, and bulk cleanup when that
--- resource stops. Deliberately NOT QB.resources.registry -- that factory's
--- returned track/untrack/owner closures live inside qblib's own environment,
--- and while FXServer's exports boundary generally supports returning
--- function references, qblib's own local/resources/AGENTS.md only ever
--- documents/exercises this factory being consumed from WITHIN qblib itself
--- (every listed consumer is an internal qblib module). Rather than rest a
--- leak-sensitive mechanism on an unconfirmed cross-resource reuse pattern,
--- qbtarget hand-rolls the exact same well-established shape locally -- a
--- byResource/ownerOf table pair swept on onClientResourceStop, mirroring
--- qblib/local/resources/client.lua almost verbatim. Exposed as fields on
--- Target (not locals) so Target.addBoxZone/addSphereZone/addPolyZone below
--- -- which build their registration record before this file's own register()
--- helper would run -- can track against it directly too.
-local ownershipByResource = {}
-local ownershipOwnerOf = {}
-
-local function trackOwnership(resource, id)
-    local previousOwner = ownershipOwnerOf[id]
-
-    if previousOwner and previousOwner ~= resource then
-        local previouslyOwned = ownershipByResource[previousOwner]
-        if previouslyOwned then previouslyOwned[id] = nil end
-    end
-
-    local owned = ownershipByResource[resource]
-    if not owned then
-        owned = {}
-        ownershipByResource[resource] = owned
-    end
-
-    owned[id] = true
-    ownershipOwnerOf[id] = resource
-end
-
-local function untrackOwnership(id)
-    local resource = ownershipOwnerOf[id]
-
-    if resource then
-        local owned = ownershipByResource[resource]
-        if owned then owned[id] = nil end
-        ownershipOwnerOf[id] = nil
-    end
-
-    return resource
-end
-
-Target.ownership = { track = trackOwnership, untrack = untrackOwnership }
-
-AddEventHandler("onClientResourceStop", function(resource)
-    local owned = ownershipByResource[resource]
-    if not owned then return end
-
-    ownershipByResource[resource] = nil
-
-    for id in pairs(owned) do
-        ownershipOwnerOf[id] = nil
-        Target.destroyRegistration(id)
-    end
+-- Keep caller ownership separate from qblib's zone ownership: qblib sees
+-- qbtarget as its caller, while this registry tracks the original resource
+-- that crossed qbtarget's export boundary.
+Target.ownership = QB.resources.registry(function(id)
+    Target.destroyRegistration(id)
 end)
 
 ---Shared by addEntity/addModel/addGlobalType/addGlobalBone: validates

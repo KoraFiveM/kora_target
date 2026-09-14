@@ -30,6 +30,7 @@ end
 local setDebugCalls = {}
 
 _G.QB = {
+    resources = {},
     util = { isCallable = function(value)
         if type(value) == 'function' then return true end
         local mt = type(value) == 'table' and getmetatable(value) or nil
@@ -104,6 +105,7 @@ _G.NetworkGetNetworkIdFromEntity = function() return 1 end
 
 dofile(resourceRoot .. 'config.lua')
 Config.target.testMode = true
+dofile(resourceRoot .. '../qblib/local/resources/client.lua')
 dofile(resourceRoot .. 'client/state.lua')
 dofile(resourceRoot .. 'client/sprites.lua')
 dofile(resourceRoot .. 'client/loop.lua')
