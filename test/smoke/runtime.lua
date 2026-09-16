@@ -10,6 +10,7 @@ local commands = {}
 local raycastResponses, raycastFlags, raycastProbes = {}, {}, {}
 local zoneHandles, zoneCalls = {}, {}
 local frozenEntities = {}
+local configBindings = {}
 
 -- Mirrors qblib's own zone handle shape (client/state.lua only relies on
 -- .remove and .contains) without pulling in qblib's real box/sphere/poly
@@ -65,6 +66,11 @@ _G.QB = {
         close = function() end,
     },
     callback = { trigger = function() end },
+    config = {
+        bind = function(resource, path, handler)
+            configBindings[resource] = { path = path, handler = handler }
+        end,
+    },
     keybind = {
         add = function(options)
             commands[options.name] = options.onPressed
@@ -179,6 +185,22 @@ harness.test('target registration mutations invalidate the aim cache', function(
     harness.assertTrue(Target.registrationRevision > revision, 'adding a target should bump the resolver generation')
     local second = runtime.entityRegistrations(99)
     harness.assertTrue(first ~= second, 'registration generation must invalidate a stable aim cache')
+end)
+
+harness.test('a live qblib config update invalidates target resolver caches', function()
+    local binding = configBindings.qbtarget
+    harness.assertTrue(binding ~= nil, 'qbtarget must bind its active config through qblib')
+    harness.assertEqual(binding.path[1], 'target', 'the binding should receive only qbtarget settings')
+
+    local revision = Target.registrationRevision
+    local settings = {}
+    for key, value in pairs(Config.target) do settings[key] = value end
+    settings.defaultOptionDistance = 4.0
+    binding.handler(settings)
+    harness.assertEqual(Config.target.defaultOptionDistance, 4.0,
+        'the active default distance should replace the previous runtime value')
+    harness.assertTrue(Target.registrationRevision > revision,
+        'a changed distance must invalidate the resolver broad-phase cache')
 end)
 
 harness.test('canInteract results are cached only for the short configured window', function()

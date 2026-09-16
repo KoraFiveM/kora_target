@@ -1,5 +1,10 @@
 Config = {}
 
+-- Keep the raw value when this resource is loaded with an older qblib. The
+-- descriptor makes this hot-path-safe setting editable live without changing
+-- qbtarget's public Config shape.
+local configNumber = QB and QB.config and QB.config.number
+
 Config.target = {
     -- Hold this key to enter targeting mode (raycasting + drawing a prompt
     -- every tick). Uses FiveM's +/- command-pair convention, not a plain
@@ -16,7 +21,14 @@ Config.target = {
     toggle = false,
 
     maxDistance = 10.0,            -- meters; QB.raycast.fromCamera's max reach while the hold key is down
-    defaultOptionDistance = 2.5,   -- meters; fallback per-option interact distance when nothing more specific is set
+    defaultOptionDistance = configNumber and configNumber(2.5, {
+        label = 'Default option distance',
+        description = 'Fallback interaction distance in metres.',
+        min = 0.1,
+        max = 25.0,
+        step = 0.1,
+        live = true,
+    }) or 2.5,                    -- meters; fallback per-option interact distance when nothing more specific is set
     legacyMaxDistance = 7.0,       -- qb-target Config.MaxDistance default used only by the qb-target compatibility surface
     legacyOutline = {              -- mirrors current qb-target's outline defaults
         enabled = false,

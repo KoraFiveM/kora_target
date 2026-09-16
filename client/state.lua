@@ -159,6 +159,17 @@ function Target._replaceOptions(id, options, defaultDistance)
     return true
 end
 
+---Applies the active target configuration received from qblib. The resolver
+---reads Config.target at evaluation time, but its broad-phase maximum and
+---aim result are revision-cached; touching registrations makes a changed
+---default distance take effect on the very next resolver pass.
+---@param settings table
+function Target.applyConfig(settings)
+    if type(settings) ~= 'table' then return end
+    Config.target = settings
+    touchRegistrations()
+end
+
 local function addToIndex(index, key, id)
     local set = index[key]
     if not set then
@@ -980,4 +991,11 @@ function Target.runServerAction(name, entity, maxDistance, ...)
     -- (multi-value returns end to end) -- server/server.lua's handler
     -- replies with (ok, ...) directly, so there's nothing to unpack here.
     return QB.callback.trigger("qbtarget:server:runAction", name, netId, maxDistance, ...)
+end
+
+-- qblib invokes the binding once with the hydrated active snapshot and again
+-- after every published live change. Keep this guarded so qbtarget remains
+-- usable with older qblib releases during a rolling upgrade.
+if QB.config and QB.config.bind then
+    QB.config.bind('qbtarget', { 'target' }, Target.applyConfig)
 end
