@@ -24,7 +24,7 @@ _G.QB = {
         local mt = type(value) == 'table' and getmetatable(value) or nil
         return mt ~= nil and mt.__call ~= nil
     end },
-    compat = { provideExport = function(identity, name, fn)
+    compat = { isCallable = function(value) return QB.util.isCallable(value) end, provideExport = function(identity, name, fn)
         AddEventHandler(('__cfx_export_%s_%s'):format(identity, name), function(setCB) setCB(fn) end)
     end },
     zones = {

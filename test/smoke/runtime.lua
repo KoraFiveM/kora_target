@@ -37,6 +37,7 @@ _G.QB = {
         local mt = type(value) == 'table' and getmetatable(value) or nil
         return mt ~= nil and mt.__call ~= nil
     end },
+    compat = { isCallable = function(value) return QB.util.isCallable(value) end },
     zones = {
         box = makeZoneHandle,
         sphere = makeZoneHandle,
