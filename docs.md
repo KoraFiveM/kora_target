@@ -2,11 +2,11 @@
 
 A crosshair/zone-based targeting engine built on `qblib` (`QB.raycast` for aim resolution, `QB.zones` for area-based targets, `QB.world`/`QB.drawing` as the underlying pool-query/prompt-rendering primitives, `QB.nui` for display-only HUD/picker messages, `QB.callback` for the optional server-action relay). One resource, no separate proxy resources: it declares `provide 'qb-target'` and `provide 'ox_target'` in its `fxmanifest.lua` and registers the real, public qb-target/ox_target export names directly (`client/compat/qb-target.lua`, `client/compat/ox-target.lua`), so scripts written against `exports['qb-target']:...` or `exports.ox_target:...` keep working unmodified against this same running resource — see those two files for the exact mapping onto qbtarget's own API, and `AGENTS.md`'s "Compatibility mechanism" section for how `provide` + manual export registration actually makes that resolve.
 
-`PolyZone` remains a dependency for the qb-target surface, just as it is
-upstream. The manifest loads its classes so legacy zone exports return genuine
-BoxZone/CircleZone/PolyZone/ComboZone/EntityZone objects and retain their full
-public methods; qbtarget's native zone engine still resolves selection through
-qblib.
+`PolyZone` is not required by qbtarget or the native qblib stack. The
+qb-target compatibility exports return qblib-backed, zone-compatible objects
+without it. Start the optional `PolyZone` wrapper only for a third-party
+resource whose manifest imports `@PolyZone/...`; when present, its classes can
+still be passed to `AddComboZone`.
 
 ## Usage
 Hold `Config.target.keybind` (default `LMENU`, i.e. left Alt) to enter targeting mode. While held, aiming at a registered entity/model/global-type/global-bone/zone shows a world-space prompt fixed at screen centre (it never moves the mouse pointer or takes NUI focus). A zone match is decided by where the crosshair's raycast actually lands, not by whether the player is standing inside a zone -- you don't need to be inside a zone to target it, just aiming at a point within it. Release Alt to act: a sole available option runs immediately (its label is shown in the prompt while held); two or more options open qblib's pointer-free interact selector after Alt is released. Use scroll or Up/Down to choose, then E to select.
@@ -63,11 +63,11 @@ bone checks. Legacy options retain `num` ordering, `required_item`, the exact
 `canInteract(entity, distance, data)`. Job, job-type, gang, item, and citizen
 filters are enforced through `qb-core`.
 
-Zone calls keep PolyZone behavior: they return zone-compatible objects,
-`GetZoneData` returns that same object, vec2 polygons are accepted, missing Z
-bounds remain 2D, combo calls accept live PolyZone objects, and EntityZone
-bounds follow the entity. Entity/model/bone/global options merge and can be
-read, replaced, or removed by label. `RaycastCamera` returns
+Zone calls return zone-compatible objects, `GetZoneData` returns that same
+object, vec2 polygons are accepted, missing Z bounds remain 2D, combo calls
+accept zone-compatible objects (including optional PolyZone instances), and
+EntityZone bounds follow the entity. Entity/model/bone/global options merge
+and can be read, replaced, or removed by label. `RaycastCamera` returns
 `coords, distance, entity, entityType`; `DisableTarget(true)` cancels the
 current session while `AllowTargeting(false)` changes the persistent gate.
 

@@ -8,8 +8,7 @@ version '1.0.0'
 description 'World/zone/model targeting engine built on qblib'
 
 dependencies {
-    'qblib',
-    'PolyZone'
+    'qblib'
 }
 
 -- Makes this ONE resource a true drop-in for scripts calling
@@ -41,13 +40,6 @@ shared_scripts {
 -- same-resource -- no exports.qbtarget: round trip needed internally), so
 -- their relative order versus loop.lua/exports.lua doesn't matter.
 client_scripts {
-    -- Match qb-target's runtime object contract: its Add*Zone exports return
-    -- actual PolyZone-derived objects, including their public shape methods.
-    '@PolyZone/client.lua',
-    '@PolyZone/BoxZone.lua',
-    '@PolyZone/EntityZone.lua',
-    '@PolyZone/CircleZone.lua',
-    '@PolyZone/ComboZone.lua',
     'client/state.lua',
     'client/sprites.lua',
     'client/loop.lua',
