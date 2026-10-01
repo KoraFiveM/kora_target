@@ -25,8 +25,13 @@ _G.QB = {
     },
 }
 _G.GetCurrentResourceName = function() return 'qbtarget' end
-_G.GetInvokingResource = function() return 'ox-doorlock' end
-_G.AddEventHandler = function(name, handler) exportsByEvent[name] = handler end
+local invokingResource = 'ox-doorlock'
+_G.GetInvokingResource = function() return invokingResource end
+local resourceStopHandlers = {}
+_G.AddEventHandler = function(name, handler)
+    exportsByEvent[name] = handler
+    if name == 'onClientResourceStop' then resourceStopHandlers[#resourceStopHandlers + 1] = handler end
+end
 _G.joaat = function(value) return value end
 local vectorCalls = {}
 _G.vector3 = function(...)
@@ -296,6 +301,105 @@ harness.test('native callback arity and legacy action handles remain unchanged',
     Target._testRuntime.selectCandidates(resolve(81, vector3(1, 0, 0)))
     harness.assertEqual(args.n, 1)
     harness.assertEqual(args[1], 81)
+    clearRegistrations()
+end)
+
+harness.test('named global type removal preserves other options, native registrations and universal entries', function()
+    clearRegistrations()
+    for _, entityType in ipairs({ 'Ped', 'Player', 'Vehicle', 'Object' }) do
+        local add, remove = getExport('addGlobal' .. entityType), getExport('removeGlobal' .. entityType)
+        local id = add({
+            { name = 'first', label = 'First', onSelect = function() end },
+            { name = 'keep', label = 'Keep', distance = 1.25, onSelect = function() end },
+            { name = 'last', label = 'Last', onSelect = function() end },
+        })
+        local keep = Target.registrations[id].options[2]
+        local native = Target.addGlobalType(entityType:lower(), { { name = 'first', label = 'Native', onSelect = function() end } })
+        local universal = addGlobalOption({ { name = 'first', label = 'Universal', onSelect = function() end } })
+        local revision = Target.registrationRevision
+        harness.assertTrue(remove('first'))
+        harness.assertEqual(#Target.registrations[id].options, 2, 'remove the option name, not a registration ID')
+        harness.assertEqual(Target.registrations[id].options[1], keep)
+        harness.assertEqual(keep.distance, 1.25)
+        harness.assertTrue(Target.registrationRevision > revision, 'invalidate the resolver on option changes')
+        harness.assertTrue(Target.registrations[native] ~= nil, 'native registrations remain outside named compatibility removal')
+        local universalCount = 0
+        for _, registration in pairs(Target.registrations) do
+            if registration.options[1].label == 'Universal' then universalCount = universalCount + 1 end
+        end
+        harness.assertEqual(universalCount, 4, 'type-specific removal retains every universal entry')
+        harness.assertFalse(remove('unknown'))
+        harness.assertFalse(remove({}))
+        harness.assertTrue(remove({ 'last', 'missing' }))
+        harness.assertEqual(#Target.registrations[id].options, 1)
+        harness.assertEqual(Target.registrations[id].options[1], keep)
+        harness.assertTrue(remove({ 'keep' }))
+        harness.assertEqual(Target.registrations[id], nil)
+        harness.assertEqual(Target.ownership.owner(id), nil)
+        harness.assertFalse(remove('keep'))
+        harness.assertTrue(remove(id), 'numeric aliases retain the previous return behavior')
+        harness.assertTrue(removeGlobalOption(universal), 'type-specific removal did not remove the universal group alias')
+        Target.destroyRegistration(native)
+    end
+    clearRegistrations()
+end)
+
+harness.test('named universal removal updates every type while preserving type-specific and numeric aliases', function()
+    clearRegistrations()
+    local scoped = addGlobalPed({ { name = 'remove', label = 'Type-specific', onSelect = function() end } })
+    local native = Target.addGlobalType('ped', { { name = 'remove', label = 'Native', onSelect = function() end } })
+    local group = addGlobalOption({
+        { name = 'remove', label = 'Remove', onSelect = function() end },
+        { name = 'keep', label = 'Keep', onSelect = function() end },
+    })
+    local otherGroup = addGlobalOption({ { name = 'other', label = 'Other', onSelect = function() end } })
+    harness.assertTrue(removeGlobalOption('remove'))
+    for _, entityType in ipairs({ 'ped', 'player', 'vehicle', 'object' }) do
+        local kept, other = 0, 0
+        for id in pairs(Target.byGlobalType[entityType]) do
+            if id ~= scoped and id ~= native then
+                local options = Target.registrations[id].options
+                harness.assertEqual(#options, 1)
+                if options[1].name == 'keep' then kept = kept + 1 end
+                if options[1].name == 'other' then other = other + 1 end
+            end
+        end
+        harness.assertEqual(kept, 1)
+        harness.assertEqual(other, 1)
+    end
+    harness.assertTrue(Target.registrations[scoped] ~= nil)
+    harness.assertTrue(Target.registrations[native] ~= nil)
+    harness.assertFalse(removeGlobalOption('unknown'))
+    harness.assertFalse(removeGlobalOption({}))
+    harness.assertTrue(removeGlobalOption({ 'keep', 'missing' }))
+    harness.assertFalse(removeGlobalOption('keep'))
+    harness.assertTrue(removeGlobalOption(group), 'keep the existing returned group ID removal alias')
+    harness.assertFalse(removeGlobalOption(group))
+    harness.assertTrue(removeGlobalOption(otherGroup))
+    harness.assertFalse(removeGlobalOption(nil))
+    harness.assertFalse(removeGlobalOption(false))
+    clearRegistrations()
+end)
+
+harness.test('named removals skip retired owned registrations and preserve nil/false whole-type cleanup', function()
+    clearRegistrations()
+    invokingResource = 'retired-consumer'
+    local retired = addGlobalPed({ { name = 'retired', label = 'Retired', onSelect = function() end } })
+    addGlobalOption({ { name = 'retired-universal', label = 'Retired universal', onSelect = function() end } })
+    invokingResource = 'live-consumer'
+    local live = addGlobalPed({ { name = 'live', label = 'Live', onSelect = function() end } })
+    for _, handler in ipairs(resourceStopHandlers) do handler('retired-consumer') end
+    harness.assertEqual(Target.registrations[retired], nil)
+    harness.assertFalse(removeGlobalPed('retired'))
+    harness.assertFalse(removeGlobalOption('retired-universal'))
+    harness.assertTrue(Target.registrations[live] ~= nil)
+    harness.assertTrue(removeGlobalPed(false), 'false retains whole-type cleanup')
+    harness.assertEqual(Target.registrations[live], nil)
+    harness.assertFalse(removeGlobalPed())
+    local numeric = addGlobalPed({ { name = 'numeric', label = 'Numeric', onSelect = function() end } })
+    harness.assertTrue(removeGlobalPed(numeric))
+    harness.assertEqual(Target.registrations[numeric], nil)
+    invokingResource = 'ox-doorlock'
     clearRegistrations()
 end)
 

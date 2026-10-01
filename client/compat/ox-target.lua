@@ -83,6 +83,7 @@ local function translateOxOptions(options)
         end
 
         translated[i] = {
+            name = option.name,
             label = option.label,
             icon = option.icon,
             distance = option.distance,
@@ -157,7 +158,9 @@ end
 
 local function addGlobal(entityType)
     return function(options)
-        return Target.addGlobalType(entityType, translateOxOptions(options))
+        local id = Target.addGlobalType(entityType, translateOxOptions(options))
+        Target.registrations[id]._oxGlobal = true
+        return id
     end
 end
 
@@ -218,8 +221,46 @@ local function getState()
     return Target.getState()
 end
 
+local function optionNames(names)
+    local wanted = {}
+    for _, name in ipairs(type(names) == 'table' and names or { names }) do wanted[name] = true end
+    return wanted
+end
+
+local function removeNamedOptions(id, wanted)
+    local registration = Target.registrations[id]
+    if not registration then return false end
+
+    local remaining = {}
+    for _, option in ipairs(registration.options) do
+        if not wanted[option.name] then remaining[#remaining + 1] = option end
+    end
+    if #remaining == #registration.options then return false end
+
+    if #remaining == 0 then
+        Target.destroyRegistration(id)
+    else
+        Target._replaceOptions(id, remaining, registration.distance)
+    end
+    return true
+end
+
 local function removeGlobal(entityType)
-    return function(id) return Target.removeGlobalType(entityType, id) end
+    return function(names)
+        if type(names) ~= 'string' and type(names) ~= 'table' then
+            return Target.removeGlobalType(entityType, names)
+        end
+
+        local ids = {}
+        for id in pairs(Target.byGlobalType[entityType] or {}) do
+            if Target.registrations[id]._oxGlobal then ids[#ids + 1] = id end
+        end
+        local wanted, removed = optionNames(names), false
+        for _, id in ipairs(ids) do
+            if removeNamedOptions(id, wanted) then removed = true end
+        end
+        return removed
+    end
 end
 
 local removeGlobalPlayer = removeGlobal('player')
@@ -227,16 +268,8 @@ local removeGlobalPed = removeGlobal('ped')
 local removeGlobalVehicle = removeGlobal('vehicle')
 local removeGlobalObject = removeGlobal('object')
 
--- addGlobalOption/removeGlobalOption: ox_target's truly-universal global
--- option, applying to EVERY entity type at once (ped+vehicle+object+player)
--- in one call -- distinct from addGlobalPed/Vehicle/Object/Player above,
--- which are type-scoped. Public-knowledge assumption (medium confidence, see
--- AGENTS.md): real ox_target's addGlobalOption(options) takes a bare options
--- array (no explicit type argument) and returns an id that
--- removeGlobalOption(id) later accepts. qbtarget has no single "every type
--- at once" primitive, so this fans out to one Target.addGlobalType call per
--- known global type, bookkept together under one synthetic group id so
--- removeGlobalOption can undo all of them as a unit.
+-- Universal registrations remain grouped so the existing numeric removal alias
+-- still works alongside the documented option-name removal.
 local globalOptionGroups = {}
 local nextGlobalOptionId = 0
 
@@ -254,6 +287,16 @@ local function addGlobalOption(options)
 end
 
 local function removeGlobalOption(groupId)
+    if type(groupId) == 'string' or type(groupId) == 'table' then
+        local wanted, removed = optionNames(groupId), false
+        for _, entries in pairs(globalOptionGroups) do
+            for _, entry in ipairs(entries) do
+                if removeNamedOptions(entry.id, wanted) then removed = true end
+            end
+        end
+        return removed
+    end
+
     local entries = globalOptionGroups[groupId]
     if not entries then return false end
 
