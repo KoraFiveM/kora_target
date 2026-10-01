@@ -30,15 +30,31 @@ local provideExport = QB.compat.provideExport
 -- qblib also centralizes callable funcref detection across export boundaries.
 local isCallable = QB.util.isCallable
 
-local function dispatchLegacy(option, entity)
+-- The compat response uses the captured hit, while native QB callbacks keep their arguments.
+local function responseFor(entity, context, server)
+    local coords = context and context.anchorCoords
+    local response = {
+        entity = entity or 0,
+        coords = coords and vector3(coords.x, coords.y, coords.z) or nil,
+        distance = context and context.distance or nil,
+        zone = context and context.registration.kind == 'zone' and context.registration.id or nil,
+    }
+    if server then
+        response.entity = entity and entity ~= 0 and NetworkGetEntityIsNetworked(entity)
+            and NetworkGetNetworkIdFromEntity(entity) or 0
+    end
+    return response
+end
+
+local function dispatchLegacy(option, entity, context)
     if isCallable(option.onSelect) then
-        option.onSelect(entity)
+        option.onSelect(responseFor(entity, context))
     elseif isCallable(option.action) then
         option.action(entity)
     elseif option.serverEvent then
-        TriggerServerEvent(option.serverEvent, entity)
+        TriggerServerEvent(option.serverEvent, responseFor(entity, context, true))
     elseif option.event then
-        TriggerEvent(option.event, entity)
+        TriggerEvent(option.event, responseFor(entity, context))
     end
 end
 
@@ -84,6 +100,9 @@ local function translateOxOptions(options)
             items = option.items,
             onSelect = function(entity)
                 dispatchLegacy(option, entity)
+            end,
+            _onSelectContext = function(context)
+                dispatchLegacy(option, context.entity, context)
             end,
         }
     end

@@ -6,7 +6,7 @@ package.path = qblibTestRoot .. '?.lua;' .. package.path
 local harness = require('harness')
 local exportsByEvent = {}
 
-_G.Config = { target = { debug = false, maxDistance = 10.0 } }
+
 
 _G.QB = {
     resources = {},
@@ -28,13 +28,46 @@ _G.GetCurrentResourceName = function() return 'qbtarget' end
 _G.GetInvokingResource = function() return 'ox-doorlock' end
 _G.AddEventHandler = function(name, handler) exportsByEvent[name] = handler end
 _G.joaat = function(value) return value end
-_G.vector3 = function(x, y, z) return { x = x, y = y, z = z } end
+local vectorCalls = {}
+_G.vector3 = function(...)
+    local args = table.pack(...)
+    local value = { x = args[1], y = args[2], z = args[3] }
+    vectorCalls[value] = args
+    return value
+end
+
+local selectedItems, clientEvents, serverEvents = nil, {}, {}
+QB.keybind = { add = function() end }
+QB.nui = { send = function() end }
+QB.interact = {
+    open = function(items) selectedItems = items; return true end,
+    isActive = function() return false end,
+    close = function() end,
+}
+_G.PlayerPedId = function() return 1 end
+_G.IsEntityPositionFrozen = function() return false end
+_G.FreezeEntityPosition = function() end
+_G.CreateThread = function() end
+_G.RegisterCommand = function() end
+_G.GetGameTimer = function() return 0 end
+_G.DoesEntityExist = function(entity) return entity ~= nil and entity ~= 0 end
+_G.GetEntityType = function() return 3 end
+_G.GetEntityModel = function() return 123 end
+_G.LocalPlayer = { state = {} }
+_G.TriggerEvent = function(name, ...) clientEvents[#clientEvents + 1] = { name = name, args = table.pack(...) } end
+_G.TriggerServerEvent = function(name, ...) serverEvents[#serverEvents + 1] = { name = name, args = table.pack(...) } end
+local networkIds = { [70] = 700 }
+_G.NetworkGetEntityIsNetworked = function(entity) return networkIds[entity] ~= nil end
+_G.NetworkGetNetworkIdFromEntity = function(entity) return assert(networkIds[entity], 'unnetworked handle conversion') end
 
 local networkEntities = {}
 _G.NetworkGetEntityFromNetworkId = function(netId) return networkEntities[netId] end
 
 dofile(resourceRoot .. '../qblib/local/resources/client.lua')
+dofile(resourceRoot .. 'config.lua')
+Config.target.testMode = true
 dofile(resourceRoot .. 'client/state.lua')
+dofile(resourceRoot .. 'client/loop.lua')
 dofile(resourceRoot .. 'client/compat/ox-target.lua')
 
 local function getExport(name)
@@ -58,16 +91,20 @@ local getState = getExport('getState')
 
 harness.test('a __call-metatable onSelect survives the FXServer export boundary (funcref tolerance)', function()
     local calls = 0
+    local response
     local onSelectProxy = setmetatable({}, {
-        __call = function(_, entity)
+        __call = function(_, data)
             calls = calls + 1
-            harness.assertEqual(entity, 7, 'the entity handle must reach the proxied onSelect')
+            response = data
         end,
     })
 
     local id = addLocalEntity(7, { { label = 'Search', onSelect = onSelectProxy } })
     Target.registrations[id].options[1].onSelect(7)
 
+    harness.assertEqual(type(response), 'table', 'compatibility onSelect receives a response table')
+    harness.assertEqual(response.entity, 7, 'the local entity handle reaches the proxied onSelect')
+    harness.assertEqual(response.coords, nil, 'direct legacy invocation retains absent hit coordinates')
     harness.assertEqual(calls, 1,
         'a __call-metatable table onSelect must be invoked, not silently fall through to serverEvent/event')
 end)
@@ -144,6 +181,122 @@ harness.test('isActive reflects Target.getState().hovering', function()
     harness.assertTrue(isActive(), 'isActive must be true once Target.hovering is set')
     harness.assertEqual(getState().hovering, Target.hovering, 'getState must expose the same hovering value isActive reads')
     Target.hovering = nil
+end)
+
+
+-- These invoke QBtarget's actual resolver/selector; native game and menu boundaries are inert.
+local function clearRegistrations()
+    local ids = {}
+    for id in pairs(Target.registrations) do ids[#ids + 1] = id end
+    for _, id in ipairs(ids) do Target.destroyRegistration(id) end
+    Target._testRuntime.closeTargetMenu()
+    Target._testRuntime.resetRuntimeState()
+end
+
+local function assertHitCoords(response, point)
+    local args = vectorCalls[response.coords]
+    harness.assertTrue(args ~= nil, 'compat coords must use the vector3 constructor')
+    harness.assertTrue(response.coords ~= point, 'construct the vector at the compatibility boundary')
+    harness.assertEqual(args.n, 3)
+    harness.assertEqual(args[1], point.x)
+    harness.assertEqual(args[2], point.y)
+    harness.assertEqual(args[3], point.z)
+end
+
+local function resolve(entity, point)
+    return Target._testRuntime.resolveCandidates(true, entity, point, 1, vector3(0, 0, 0))
+end
+
+harness.test('compat callbacks receive the captured hit, including delayed selection and zone identity', function()
+    clearRegistrations()
+    local response, calls = nil, 0
+    local option = { label = 'Inspect', name = 'inspect', distance = 2,
+        onSelect = function(data) response = data; calls = calls + 1 end }
+    addLocalEntity(40, { option, { label = 'Other', onSelect = function() error('wrong choice') end } })
+    local point = { x = 1.5, y = 0, z = 0 }
+    local candidates = resolve(40, point)
+    harness.assertEqual(#candidates, 2)
+    Target._testRuntime.selectCandidates(candidates)
+    local choose = selectedItems[1].action
+    Target._testRuntime.resetRuntimeState()
+    resolve(99, vector3(2, 0, 0))
+    choose()
+    harness.assertEqual(calls, 1)
+    harness.assertEqual(type(response), 'table')
+    harness.assertEqual(response.entity, 40)
+    assertHitCoords(response, point)
+    harness.assertEqual(response.distance, 1.5)
+    harness.assertEqual(response.zone, nil)
+    harness.assertEqual(option.entity, nil, 'selection must not alter caller options')
+    harness.assertEqual(option.coords, nil)
+
+    clearRegistrations()
+    local oldSphere = QB.zones.sphere
+    QB.zones.sphere = function() return { remove = function() end, contains = function() return true end } end
+    local zone = getExport('addSphereZone')({ coords = point, radius = 1,
+        options = { { label = 'Zone', onSelect = function(data) response = data end } } })
+    Target._testRuntime.selectCandidates(resolve(0, point))
+    harness.assertEqual(response.zone, zone)
+    harness.assertEqual(response.entity, 0, 'world geometry uses the documented numeric no-entity value')
+    assertHitCoords(response, point)
+    harness.assertEqual(response.distance, 1.5)
+    QB.zones.sphere = oldSphere
+    clearRegistrations()
+end)
+
+harness.test('compat client and server events receive one response; server entity uses network identity', function()
+    clearRegistrations()
+    local point = { x = 1, y = 0, z = 0 }
+    addLocalEntity(70, { { label = 'Client', event = 'consumer:client' } })
+    Target._testRuntime.selectCandidates(resolve(70, point))
+    local client = clientEvents[#clientEvents]
+    harness.assertEqual(client.name, 'consumer:client')
+    harness.assertEqual(client.args.n, 1)
+    harness.assertEqual(type(client.args[1]), 'table')
+    harness.assertEqual(client.args[1].entity, 70)
+    assertHitCoords(client.args[1], point)
+    harness.assertEqual(client.args[1].distance, 1)
+    clearRegistrations()
+
+    local clientCount = #clientEvents
+    addLocalEntity(70, { { label = 'Server', serverEvent = 'consumer:server', event = 'unused:client' } })
+    Target._testRuntime.selectCandidates(resolve(70, point))
+    local server = serverEvents[#serverEvents]
+    harness.assertEqual(server.name, 'consumer:server')
+    harness.assertEqual(server.args.n, 1)
+    harness.assertEqual(type(server.args[1]), 'table')
+    harness.assertEqual(server.args[1].entity, 700, 'network ID, never the local handle')
+    assertHitCoords(server.args[1], point)
+    harness.assertEqual(server.args[1].distance, 1)
+    harness.assertEqual(#clientEvents, clientCount, 'retain existing bridge action priority')
+    clearRegistrations()
+
+    addLocalEntity(71, { { label = 'Local only', serverEvent = 'consumer:server' } })
+    Target._testRuntime.selectCandidates(resolve(71, point))
+    harness.assertEqual(serverEvents[#serverEvents].args[1].entity, 0, 'unnetworked entity is never exposed as a server handle')
+    clearRegistrations()
+end)
+
+harness.test('native callback arity and legacy action handles remain unchanged', function()
+    clearRegistrations()
+    local args
+    Target.addEntity(80, { { label = 'Native', data = false, onSelect = function(...) args = table.pack(...) end } })
+    Target._testRuntime.selectCandidates(resolve(80, vector3(1, 0, 0)))
+    harness.assertEqual(args.n, 2)
+    harness.assertEqual(args[1], 80)
+    harness.assertEqual(args[2], false)
+    clearRegistrations()
+    addLocalEntity(82, { { label = 'Compat callback', onSelect = function(...) args = table.pack(...) end } })
+    Target._testRuntime.selectCandidates(resolve(82, vector3(1, 0, 0)))
+    harness.assertEqual(args.n, 1)
+    harness.assertEqual(type(args[1]), 'table')
+    harness.assertEqual(args[1].entity, 82)
+    clearRegistrations()
+    addLocalEntity(81, { { label = 'Legacy action', action = function(...) args = table.pack(...) end } })
+    Target._testRuntime.selectCandidates(resolve(81, vector3(1, 0, 0)))
+    harness.assertEqual(args.n, 1)
+    harness.assertEqual(args[1], 81)
+    clearRegistrations()
 end)
 
 harness.report('qbtarget ox_target compatibility')

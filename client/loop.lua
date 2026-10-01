@@ -491,7 +491,12 @@ local function resolverWait()
 end
 
 local function runOption(candidate)
-    local ok, err = pcall(candidate.option.onSelect, candidate.entity, candidate.option.data)
+    local ok, err
+    if candidate.option._onSelectContext then
+        ok, err = pcall(candidate.option._onSelectContext, candidate)
+    else
+        ok, err = pcall(candidate.option.onSelect, candidate.entity, candidate.option.data)
+    end
     if not ok then print(("[qbtarget] onSelect for option '%s' errored: %s"):format(candidate.option.label, tostring(err))) end
 end
 
