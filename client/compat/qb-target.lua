@@ -56,26 +56,23 @@ end
 -- job/gang/item/jobType enforcement -- qbtarget's own native resolver
 -- deliberately never interprets these fields (framework-agnostic by design,
 -- see ../../docs.md's "Opaque fields" section); this is the compat SHIM's
--- job, done here rather than in qbtarget's core. qb-core now exists in this
--- repo (resources/[test]/qbcore, `provide 'qb-core'`) -- pcall-guarded so
--- this shim still degrades to the old unenforced-with-warning behaviour if
--- it's ever dropped into a server with no qb-core identity running at all.
+-- job, done here rather than in qbtarget's core. Read qbcore directly, while
+-- retaining the optional-framework behavior and legacy zero-based grades.
 -- Semantics ported verbatim from real qb-target's JobCheck/JobTypeCheck/
 -- GangCheck/CitizenCheck (client.lua's "QBCore init" CreateThread).
-local QBCore, PlayerData
+local coreAvailable, PlayerData
 
 local function refreshPlayerData()
-    if not QBCore then return end
-    local ok, data = pcall(QBCore.Functions.GetPlayerData)
-    if ok and data then PlayerData = data end
+    local ok, data = pcall(function()
+        return exports.qbcore:toLegacyPlayerData(exports.qbcore:getPlayerData())
+    end)
+    if ok then
+        coreAvailable = true
+        PlayerData = data
+    end
 end
 
-CreateThread(function()
-    local ok, core = pcall(function() return exports['qb-core']:GetCoreObject({ 'Functions' }) end)
-    if not ok or not core then return end
-    QBCore = core
-    refreshPlayerData()
-end)
+CreateThread(refreshPlayerData)
 
 RegisterNetEvent('QBCore:Client:OnPlayerLoaded', refreshPlayerData)
 RegisterNetEvent('QBCore:Client:OnPlayerUnload', function() PlayerData = nil end)
@@ -128,21 +125,21 @@ local function makeCanInteract(option)
     local hasFilter = option.job or option.excludejob or option.jobType or option.excludejobType
         or option.gang or option.excludegang or option.item or option.citizenid
 
-    if hasFilter and not QBCore then
-        print(('[qb-target-bridge] WARNING: option %q sets a job/gang/item/jobType filter but no qb-core '
+    if hasFilter and not coreAvailable then
+        print(('[qb-target-bridge] WARNING: option %q sets a job/gang/item/jobType filter but no qbcore '
             .. 'identity resource is running -- the option will be shown to EVERYONE unless it supplies its '
             .. 'own canInteract.'):format(tostring(option.label)))
     end
 
     return function(entity, distance, data)
-        if QBCore then
+        if coreAvailable then
             if option.job and not jobCheck(option.job) then return false end
             if option.excludejob and jobCheck(option.excludejob) then return false end
             if option.jobType and not jobTypeCheck(option.jobType) then return false end
             if option.excludejobType and jobTypeCheck(option.excludejobType) then return false end
             if option.gang and not gangCheck(option.gang) then return false end
             if option.excludegang and gangCheck(option.excludegang) then return false end
-            if option.item and not QBCore.Functions.HasItem(option.item) then return false end
+            if option.item and not exports.qbinventory:HasItem(option.item) then return false end
             if option.citizenid and not citizenCheck(option.citizenid) then return false end
         end
         if isCallable(option.canInteract) then

@@ -140,16 +140,11 @@ local qbCorePlayerData = {
 }
 local heldItems = {}
 _G.exports = {
-    ['qb-core'] = {
-        GetCoreObject = function(_, _filters)
-            return {
-                Functions = {
-                    GetPlayerData = function() return qbCorePlayerData end,
-                    HasItem = function(item) return heldItems[item] == true end,
-                },
-            }
-        end,
+    qbcore = {
+        getPlayerData = function() return qbCorePlayerData end,
+        toLegacyPlayerData = function(_, data) return data end,
     },
+    qbinventory = { HasItem = function(_, item) return heldItems[item] == true end },
 }
 -- Real FiveM builds vector3 as an engine-provided constructor; the
 -- standalone lua interpreter has no such global, so AddBoxZone's (and
