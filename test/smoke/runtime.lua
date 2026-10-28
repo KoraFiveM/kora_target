@@ -1,6 +1,6 @@
 local scriptDir = debug.getinfo(1, 'S').source:match('@?(.*/)') or './'
 local resourceRoot = scriptDir .. '../../'
-local qblibTestRoot = resourceRoot .. '../qblib/test/'
+local qblibTestRoot = resourceRoot .. '../kora_lib/test/'
 package.path = qblibTestRoot .. '?.lua;' .. package.path
 
 local harness = require('harness')
@@ -12,11 +12,11 @@ local zoneHandles, zoneCalls = {}, {}
 local frozenEntities = {}
 local configBindings = {}
 
--- Mirrors qblib's own zone handle shape (client/state.lua only relies on
--- .remove and .contains) without pulling in qblib's real box/sphere/poly
+-- Mirrors kora_lib's own zone handle shape (client/state.lua only relies on
+-- .remove and .contains) without pulling in kora_lib's real box/sphere/poly
 -- geometry -- each test controls containment directly by overriding the
--- handle's .contains after registering, so this stays a test of qbtarget's
--- own resolver wiring, not qblib's zone math (which has its own coverage).
+-- handle's .contains after registering, so this stays a test of kora_target's
+-- own resolver wiring, not kora_lib's zone math (which has its own coverage).
 local function makeZoneHandle(options)
     zoneCalls[#zoneCalls + 1] = options
     local handle = { remove = function() end, contains = function() return false end }
@@ -26,8 +26,8 @@ end
 
 -- Records calls rather than doing anything real (like makeZoneHandle above) --
 -- the qbtarget_debug command test only needs to prove client/loop.lua calls
--- through to QB.zones.setDebug with the right (id, enabled) pair, not qblib's
--- own runtime toggle behaviour (covered separately in qblib's own test suite).
+-- through to QB.zones.setDebug with the right (id, enabled) pair, not kora_lib's
+-- own runtime toggle behaviour (covered separately in kora_lib's own test suite).
 local setDebugCalls = {}
 
 _G.QB = {
@@ -45,7 +45,7 @@ _G.QB = {
         setDebug = function(id, enabled) setDebugCalls[#setDebugCalls + 1] = { id, enabled } end,
     },
     drawing = { text3d = function() end },
-    -- The stub models qblib's asynchronous ray handle: flags are recorded at
+    -- The stub models kora_lib's asynchronous ray handle: flags are recorded at
     -- start time and the queued response is claimed before it is awaited.
     raycast = {
         start = function(_, _, flags)
@@ -81,7 +81,7 @@ _G.QB = {
     },
 }
 
-_G.GetCurrentResourceName = function() return 'qbtarget' end
+_G.GetCurrentResourceName = function() return 'kora_target' end
 _G.GetInvokingResource = function() return nil end
 _G.AddEventHandler = function() end
 _G.CreateThread = function() end
@@ -112,7 +112,7 @@ _G.NetworkGetNetworkIdFromEntity = function() return 1 end
 
 dofile(resourceRoot .. 'config.lua')
 Config.target.testMode = true
-dofile(resourceRoot .. '../qblib/local/resources/client.lua')
+dofile(resourceRoot .. '../kora_lib/local/resources/client.lua')
 dofile(resourceRoot .. 'client/state.lua')
 dofile(resourceRoot .. 'client/sprites.lua')
 dofile(resourceRoot .. 'client/loop.lua')
@@ -189,7 +189,7 @@ harness.test('target registration mutations invalidate the aim cache', function(
 end)
 
 harness.test('a live qblib config update invalidates target resolver caches', function()
-    local binding = configBindings.qbtarget
+    local binding = configBindings.kora_target
     harness.assertTrue(binding ~= nil, 'qbtarget must bind its active config through qblib')
     harness.assertEqual(binding.path[1], 'target', 'the binding should receive only qbtarget settings')
 
@@ -398,7 +398,7 @@ end)
 harness.test('addGlobalType takes the options array POSITIONALLY, not a { options = ... } envelope', function()
     -- The legacy qb-target shape ({ options = {...}, distance = n }) is only
     -- valid through the qb-target compat identity, which unwraps it. The
-    -- native API takes a bare dense array -- qbpolice shipped 13 registrations
+    -- native API takes a bare dense array -- kora_police shipped 13 registrations
     -- using the envelope against the native export and every one of them
     -- failed validation at first client connect. Pin both directions.
     local id = Target.addGlobalType('player', {
@@ -443,7 +443,7 @@ harness.test('qbtarget_debug command toggles every target zone through QB.zones.
     -- client/loop.lua's own module chunk (loaded via dofile below, alongside
     -- state.lua) registers this -- Config.target.debug/zoneDebugEnabled stay
     -- the creation-time default; this command is the runtime override layered
-    -- on top of qblib's QB.zones.setDebug, so it must reach QB.zones.setDebug
+    -- on top of kora_lib's QB.zones.setDebug, so it must reach QB.zones.setDebug
     -- with (nil, enabled) rather than touching any single zone's own handle.
     local handler = commands['qbtarget_debug']
     harness.assertTrue(handler ~= nil, 'client/loop.lua must register a qbtarget_debug command')

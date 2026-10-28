@@ -4,7 +4,7 @@
 -- client" is otherwise unaddressed here): a distance-revalidated relay for a
 -- server action, registered by name. Deliberately not a permission framework
 -- (job/gang/item checks) -- no qb-core/ox_core exists in this repo to hook
--- into one, see qbtarget/docs.md.
+-- into one, see kora_target/docs.md.
 ServerTarget = ServerTarget or {}
 
 local serverActions = {}
@@ -16,7 +16,7 @@ local ENTITY_VALIDATION_MESSAGES = {
     too_far = 'Too far from target.',
 }
 
--- qblib's QB.callback module now forwards a handler's return values in full
+-- kora_lib's QB.callback module now forwards a handler's return values in full
 -- (multi-value returns end to end), so this replies with (ok, ...) directly
 -- -- true plus the action handler's own return values, or false plus a
 -- reason string -- rather than the hand-rolled envelope table this used to

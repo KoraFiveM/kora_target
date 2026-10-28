@@ -1,10 +1,10 @@
 ---
 layout: default
-title: qbtarget
+title: kora_target
 ---
 
 A crosshair/zone-based targeting and interaction engine for FiveM, built on
-[qblib](https://qbcore2.github.io/qblib/) (`QB.raycast` for aim resolution,
+[qblib](https://qbcore2.github.io/kora_lib/) (`QB.raycast` for aim resolution,
 `QB.zones` for area-based targets, `QB.world`/`QB.drawing` as the underlying
 pool-query/prompt-rendering primitives). It's one resource, no separate proxy
 resources: it declares `provide 'qb-target'` and `provide 'ox_target'` in its
@@ -15,16 +15,16 @@ resource.
 
 ## Requirements
 
-- [qblib](https://qbcore2.github.io/qblib/) — shared helper library qbtarget is built on (raycasting, zones, world/drawing primitives, NUI, callbacks)
+- [qblib](https://qbcore2.github.io/kora_lib/) — shared helper library kora_target is built on (raycasting, zones, world/drawing primitives, NUI, callbacks)
 
 ## Installation
 
 `server.cfg`, in this order:
 ```
-ensure qblib
-ensure qbtarget
+ensure kora_lib
+ensure kora_target
 ```
-No database and no framework (qb-core/ox_core/QBCore) are required — qbtarget
+No database and no framework (qb-core/ox_core/QBCore) are required — kora_target
 has no persistence and does not check jobs/gangs/inventory itself (see the
 "Opaque fields" note under API reference below).
 
@@ -35,7 +35,7 @@ has no persistence and does not check jobs/gangs/inventory itself (see the
 -- client
 local vehicle = GetVehiclePedIsIn(PlayerPedId(), false)
 
-local id = exports.qbtarget:addEntity(vehicle, {
+local id = exports.kora_target:addEntity(vehicle, {
     {
         label = 'Inspect vehicle',
         icon = 'Car',
@@ -47,13 +47,13 @@ local id = exports.qbtarget:addEntity(vehicle, {
 })
 
 -- later
-exports.qbtarget:removeEntity(vehicle, id)
+exports.kora_target:removeEntity(vehicle, id)
 ```
 
 ### Target every entity spawned from a model
 ```lua
 -- client
-exports.qbtarget:addModel('prop_atm_01', {
+exports.kora_target:addModel('prop_atm_01', {
     {
         label = 'Use ATM',
         icon = 'CreditCard',
@@ -70,7 +70,7 @@ exports.qbtarget:addModel('prop_atm_01', {
 local vehicle = GetVehiclePedIsIn(PlayerPedId(), false)
 
 -- sugar over addEntity: forces every option onto the 'boot' bone
-exports.qbtarget:addTargetBone(vehicle, 'boot', {
+exports.kora_target:addTargetBone(vehicle, 'boot', {
     {
         label = 'Open trunk',
         icon = 'Box',
@@ -87,7 +87,7 @@ exports.qbtarget:addTargetBone(vehicle, 'boot', {
 ### Target every entity of a global type
 ```lua
 -- client
-exports.qbtarget:addGlobalType('ped', {
+exports.kora_target:addGlobalType('ped', {
     {
         label = 'Frisk',
         icon = 'Search',
@@ -105,7 +105,7 @@ exports.qbtarget:addGlobalType('ped', {
 ### Target a coordinate-based zone (no aiming required)
 ```lua
 -- client
-local id = exports.qbtarget:addBoxZone({
+local id = exports.kora_target:addBoxZone({
     coords = vector3(100.0, 200.0, 30.0),
     size = vector3(2.0, 2.0, 3.0),
     rotation = 0.0,
@@ -115,12 +115,12 @@ local id = exports.qbtarget:addBoxZone({
 })
 
 -- later
-exports.qbtarget:removeZone(id)
+exports.kora_target:removeZone(id)
 ```
 
 ### ox_target compat — same call signature, no separate resource
 ```lua
--- client, written against ox_target but running on qbtarget unmodified
+-- client, written against ox_target but running on kora_target unmodified
 exports.ox_target:addBoxZone({
     coords = vector3(100.0, 200.0, 30.0),
     size = vector3(2.0, 2.0, 3.0),
@@ -137,19 +137,19 @@ exports.ox_target:addLocalEntity(entity, {
 ### Server-validated action relay
 ```lua
 -- server
-exports.qbtarget:registerServerAction('openTrunk', function(src, entity)
+exports.kora_target:registerServerAction('openTrunk', function(src, entity)
     -- entity is already distance-checked against src here
     TriggerClientEvent('myscript:openTrunk', src, entity)
 end)
 
 -- client, inside an onSelect
-local ok, result = exports.qbtarget:runServerAction('openTrunk', entity, 3.0)
+local ok, result = exports.kora_target:runServerAction('openTrunk', entity, 3.0)
 if not ok then print('too far away or invalid target') end
 ```
 
 ## API reference
 
-All functions are plain FiveM exports on `qbtarget` — `exports.qbtarget:<name>(...)`.
+All functions are plain FiveM exports on `kora_target` — `exports.kora_target:<name>(...)`.
 The same targets are also reachable through `exports['qb-target']:...`
 (PascalCase, qb-target's real function names) and `exports.ox_target:...`
 (camelCase, ox_target's real function names) — both are compatibility layers
@@ -157,7 +157,7 @@ over this same API, not separate implementations.
 
 The qb-target surface keeps its upstream `PolyZone` dependency. Its zone calls
 return genuine PolyZone-derived objects with the complete public shape API,
-while qbtarget continues to resolve target selection through qblib.
+while kora_target continues to resolve target selection through kora_lib.
 
 ### qb-target drop-in compatibility
 
@@ -235,13 +235,13 @@ Every `add*`/zone constructor takes an `options` array of:
 ```
 
 ### Opaque `item`/`job`/`gang`/`groups` fields
-The native `exports.qbtarget` API accepts these fields but deliberately leaves policy to its caller. The `exports['qb-target']` compatibility surface is different: it enforces `job`, `excludejob`, `jobType`, `excludejobType`, `gang`, `excludegang`, `item`, and `citizenid` through qbcore, then runs the option's own `canInteract`. The ox_target surface does not interpret ox_core `groups` because ox_core is not part of this stack.
+The native `exports.kora_target` API accepts these fields but deliberately leaves policy to its caller. The `exports['qb-target']` compatibility surface is different: it enforces `job`, `excludejob`, `jobType`, `excludejobType`, `gang`, `excludegang`, `item`, and `citizenid` through kora_core, then runs the option's own `canInteract`. The ox_target surface does not interpret ox_core `groups` because ox_core is not part of this stack.
 
 ## Config highlights (`config.lua`)
 
 `Config.target.keybind` (default `LMENU`, hold-to-target) and `Config.target.toggle`
 (set `true` for press-to-activate instead of hold, matching ox_target's default).
-Releasing `Config.target.keybind` runs the sole option or opens qblib's pointer-free
+Releasing `Config.target.keybind` runs the sole option or opens kora_lib's pointer-free
 interact selector for multiple options (scroll or Up/Down to choose, E to select). `Config.target.maxDistance`
 (10.0m raycast reach) and `defaultOptionDistance` (2.5m fallback interact
 distance). `tickAcquire`/`tickActive` (50ms resolver cadence over an entity or
@@ -259,9 +259,9 @@ location icons; `demo` (built-in global ped/vehicle demo targets) defaults to
 
 Part of the [qbcore2](https://github.com/qbcore2) resource set:
 
-- [qblib](https://qbcore2.github.io/qblib/) — shared helper library
-- [qbsql](https://qbcore2.github.io/qbsql/) — database driver
-- [qbcore](https://qbcore2.github.io/qbcore/) — framework core
-- [qbinventory](https://qbcore2.github.io/qbinventory/) — headless inventory
-- [qbclothing](https://qbcore2.github.io/qbclothing/) — clothing/wardrobe
+- [qblib](https://qbcore2.github.io/kora_lib/) — shared helper library
+- [qbsql](https://qbcore2.github.io/kora_sql/) — database driver
+- [qbcore](https://qbcore2.github.io/kora_core/) — framework core
+- [qbinventory](https://qbcore2.github.io/kora_inventory/) — headless inventory
+- [qbclothing](https://qbcore2.github.io/kora_clothing/) — clothing/wardrobe
 - [full resource list ↗](https://github.com/orgs/qbcore2/repositories)

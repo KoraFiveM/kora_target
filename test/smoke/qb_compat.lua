@@ -1,6 +1,6 @@
 local scriptDir = debug.getinfo(1, 'S').source:match('@?(.*/)') or './'
 local resourceRoot = scriptDir .. '../../'
-local qblibTestRoot = resourceRoot .. '../qblib/test/'
+local qblibTestRoot = resourceRoot .. '../kora_lib/test/'
 package.path = qblibTestRoot .. '?.lua;' .. package.path
 
 local harness = require('harness')
@@ -38,7 +38,7 @@ _G.QB = {
         end,
     },
 }
-_G.GetCurrentResourceName = function() return 'qbtarget' end
+_G.GetCurrentResourceName = function() return 'kora_target' end
 _G.GetInvokingResource = function() return 'qb-banking' end
 _G.AddEventHandler = function(name, handler) exportsByEvent[name] = handler end
 _G.joaat = function(value) return value end
@@ -124,7 +124,7 @@ QB.stream = {
 
 -- The qb-target compat now fetches qb-core once at load time (job/gang/item
 -- enforcement, see AGENTS.md's "Job/gang/item enforcement") -- CreateThread
--- runs synchronously here (same idiom qbcore's own legacy_callback_wire.lua
+-- runs synchronously here (same idiom kora_core's own legacy_callback_wire.lua
 -- test uses) so that fetch completes before any test below runs.
 _G.CreateThread = function(fn) fn() end
 local netHandlers = {}
@@ -140,11 +140,11 @@ local qbCorePlayerData = {
 }
 local heldItems = {}
 _G.exports = {
-    qbcore = {
+    kora_core = {
         getPlayerData = function() return qbCorePlayerData end,
         toLegacyPlayerData = function(_, data) return data end,
     },
-    qbinventory = { HasItem = function(_, item) return heldItems[item] == true end },
+    kora_inventory = { HasItem = function(_, item) return heldItems[item] == true end },
 }
 -- Real FiveM builds vector3 as an engine-provided constructor; the
 -- standalone lua interpreter has no such global, so AddBoxZone's (and
@@ -152,7 +152,7 @@ _G.exports = {
 -- call needs a plain-table stand-in.
 _G.vector3 = function(x, y, z) return { x = x, y = y, z = z } end
 
-dofile(resourceRoot .. '../qblib/local/resources/client.lua')
+dofile(resourceRoot .. '../kora_lib/local/resources/client.lua')
 dofile(resourceRoot .. 'client/state.lua')
 dofile(resourceRoot .. 'client/compat/qb-target.lua')
 

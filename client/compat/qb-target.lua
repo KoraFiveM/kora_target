@@ -1,5 +1,5 @@
 -- Drop-in compatibility bridge: translates the real, public qb-target API
--- into calls against Target.* directly (same resource -- no exports.qbtarget:
+-- into calls against Target.* directly (same resource -- no exports.kora_target:
 -- round trip needed). Scripts written against exports['qb-target']:... keep
 -- working unmodified even though this resource is literally named
 -- "qbtarget", not "qb-target" -- see provideExport below.
@@ -53,10 +53,10 @@ local function dispatchLegacy(option, entity)
     end
 end
 
--- job/gang/item/jobType enforcement -- qbtarget's own native resolver
+-- job/gang/item/jobType enforcement -- kora_target's own native resolver
 -- deliberately never interprets these fields (framework-agnostic by design,
 -- see ../../docs.md's "Opaque fields" section); this is the compat SHIM's
--- job, done here rather than in qbtarget's core. Read qbcore directly, while
+-- job, done here rather than in kora_target's core. Read kora_core directly, while
 -- retaining the optional-framework behavior and legacy zero-based grades.
 -- Semantics ported verbatim from real qb-target's JobCheck/JobTypeCheck/
 -- GangCheck/CitizenCheck (client.lua's "QBCore init" CreateThread).
@@ -64,7 +64,7 @@ local coreAvailable, PlayerData
 
 local function refreshPlayerData()
     local ok, data = pcall(function()
-        return exports.qbcore:toLegacyPlayerData(exports.qbcore:getPlayerData())
+        return exports.kora_core:toLegacyPlayerData(exports.kora_core:getPlayerData())
     end)
     if ok then
         coreAvailable = true
@@ -139,7 +139,7 @@ local function makeCanInteract(option)
             if option.excludejobType and jobTypeCheck(option.excludejobType) then return false end
             if option.gang and not gangCheck(option.gang) then return false end
             if option.excludegang and gangCheck(option.excludegang) then return false end
-            if option.item and not exports.qbinventory:HasItem(option.item) then return false end
+            if option.item and not exports.kora_inventory:HasItem(option.item) then return false end
             if option.citizenid and not citizenCheck(option.citizenid) then return false end
         end
         if isCallable(option.canInteract) then
@@ -151,7 +151,7 @@ local function makeCanInteract(option)
 end
 
 -- Translates qb-target's option shape ({type?, event?, icon, label, action?,
--- canInteract?, item?, job?, gang?, jobType?, distance?}) into qbtarget's own
+-- canInteract?, item?, job?, gang?, jobType?, distance?}) into kora_target's own
 -- QBTargetOption shape.
 local function translateOptions(options)
     assert(type(options) == 'table', 'qb-target target options must be a table.')
@@ -201,7 +201,7 @@ local function labelSet(labels)
 end
 
 -- qb-target stores one option map per entity/model/bone/global type and merges
--- repeated Add* calls by label. qbtarget's native model stores immutable
+-- repeated Add* calls by label. kora_target's native model stores immutable
 -- registration groups instead. This ledger recreates the label-addressable
 -- view and uses Target._replaceOptions for exact remove/update behavior.
 local legacyRecords = {}
@@ -336,7 +336,7 @@ end
 local zonesByName = {}
 local RemoveZone
 
--- qb-target returns/stores PolyZone objects, while qbtarget's native zone API
+-- qb-target returns/stores PolyZone objects, while kora_target's native zone API
 -- returns registration ids. This lightweight object preserves the observable
 -- qb-target contract (`isPointInside`, `destroy`, `targetoptions`, shape data)
 -- and owns the native registrations behind it.
@@ -367,7 +367,7 @@ end
 
 -- In a real server the manifest loads the same PolyZone classes upstream
 -- qb-target loads. Preserve those actual returned objects (and therefore all
--- of their public methods) while attaching qbtarget registration lifecycle.
+-- of their public methods) while attaching kora_target registration lifecycle.
 -- The plain-Lua smoke harness has no PolyZone globals and exercises the exact
 -- standalone predicates below instead.
 local function trackPolyZoneObject(name, kind, zone, targetOptions, distance, spriteCoords, drawSprite, bounds, targetEntity)
@@ -391,7 +391,7 @@ end
 
 -- Shared translation helpers, factored out of AddBoxZone/AddCircleZone/
 -- AddPolyZone below so AddComboZone (a name-less, options-sharing group of
--- sub-zones) can reuse the exact same qb-target->qbtarget shape logic
+-- sub-zones) can reuse the exact same qb-target->kora_target shape logic
 -- instead of duplicating it. These do NOT touch zonesByName -- only the
 -- public Add*Zone wrappers below do that, since a combo zone's bookkeeping
 -- differs (one name maps to several ids, see AddComboZone).
@@ -465,7 +465,7 @@ local function makeBoxZone(coords, length, width, boxOpts, targetOptions)
 
     -- PolyZone boxes are 2D when minZ/maxZ are absent. Scale/offset may also
     -- make the two horizontal halves asymmetric, which a centre/size-only
-    -- qblib box cannot express, so use the exact PolyZone predicate there.
+    -- kora_lib box cannot express, so use the exact PolyZone predicate there.
     if (boxOpts.minZ == nil and boxOpts.maxZ == nil) or boxOpts.scale or boxOpts.offset then
         local scale, offset = boxScaleOffset(boxOpts)
         local radians = math.rad(boxOpts.heading or 0.0)
@@ -549,7 +549,7 @@ local function makePolyZone(points, boxOpts, targetOptions)
     local mapped = optionsMap(targetOptions.options, distance)
 
     -- qb-target/PolyZone accepts vec2 vertices and treats a poly without
-    -- minZ/maxZ as a 2D footprint. Convert to qblib's vec3 input and use an
+    -- minZ/maxZ as a 2D footprint. Convert to kora_lib's vec3 input and use an
     -- effectively unbounded world-height band for that case.
     local converted = {}
     local anchorZ = boxOpts.minZ and boxOpts.maxZ and (boxOpts.minZ + boxOpts.maxZ) / 2 or 0.0
@@ -831,7 +831,7 @@ local function RemoveTargetModel(models, labels)
     return removed
 end
 
--- qb-target zones are name-keyed; qbtarget's own are id-based -- zonesByName
+-- qb-target zones are name-keyed; kora_target's own are id-based -- zonesByName
 -- is this bridge's own translation state between the two. A combo zone
 -- (AddComboZone above) stores an ARRAY of ids under its name instead of a
 -- single one, so this removes every id in that array together.
@@ -872,7 +872,7 @@ end
 
 -- qb-target bundles a small ped spawner that resources such as qb-taxijob use
 -- through exports['qb-target']:SpawnPed(...). Keep its state in this compat
--- layer rather than adding ped lifecycle concerns to qbtarget's native API.
+-- layer rather than adding ped lifecycle concerns to kora_target's native API.
 -- Each spawned ped also remembers the exact target registration created for
 -- it so explicit removal and resource-stop cleanup don't leave stale entity or
 -- model registrations behind.
@@ -1074,7 +1074,7 @@ AddEventHandler('onClientResourceStop', function(resource)
     for _, name in ipairs(zoneNames) do RemoveZone(name) end
 end)
 
--- Upstream returns coords, distance, entity, entityType. qblib's raycast
+-- Upstream returns coords, distance, entity, entityType. kora_lib's raycast
 -- primitive supplies hit, coords, entity, so compute the two remaining values.
 local function RaycastCamera(flag, playerCoords)
     local hit, coords, entityHit = QB.raycast.fromCamera(16.0, flag or -1)

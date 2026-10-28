@@ -1,12 +1,12 @@
 -- Drop-in compatibility bridge: translates the real, public ox_target API
--- into calls against Target.* directly (same resource -- no exports.qbtarget:
+-- into calls against Target.* directly (same resource -- no exports.kora_target:
 -- round trip needed). Scripts written against exports.ox_target:... keep
 -- working unmodified even though this resource is literally named
 -- "qbtarget", not "ox_target" -- see provideExport below.
 --
 -- See ../../AGENTS.md for the full function-by-function mapping table and
 -- the explicitly flagged public-knowledge assumptions (removeLocalEntity/
--- removeModel's optional `names` argument, canInteract arity -- qbtarget's
+-- removeModel's optional `names` argument, canInteract arity -- kora_target's
 -- own canInteract only forwards (entity, distance, data), so a ported
 -- script's canInteract does NOT receive ox_target's real (entity, distance,
 -- coords, name, bone) -- and getState()'s exact return shape).
@@ -17,7 +17,7 @@ Target = Target or {}
 -- it's needed (`provide` in fxmanifest.lua alone doesn't make
 -- exports.ox_target:Fn() resolve here -- only registering the underlying
 -- __cfx_export_ox_target_<name> event does). Duplicated rather than shared:
--- qblib publishes the identity bridge for compatibility providers in either realm.
+-- kora_lib publishes the identity bridge for compatibility providers in either realm.
 local provideExport = QB.compat.provideExport
 
 -- A callback passed through an FXServer export boundary is represented as a
@@ -27,7 +27,7 @@ local provideExport = QB.compat.provideExport
 -- `onSelect`/`action` reaching this bridge in that shape used to silently
 -- fall through to serverEvent/event/nothing, since `type(x) == 'function'`
 -- is false for it. Duplicated rather than shared for the same reason
--- qblib also centralizes callable funcref detection across export boundaries.
+-- kora_lib also centralizes callable funcref detection across export boundaries.
 local isCallable = QB.util.isCallable
 
 -- The compat response uses the captured hit, while native QB callbacks keep their arguments.
@@ -60,7 +60,7 @@ end
 
 -- Translates ox_target's option shape ({name?, icon, label, distance?,
 -- bones?, canInteract?, onSelect?, action?, event?, serverEvent?, groups?,
--- items?}) into qbtarget's own QBTargetOption shape. `distance`/`bones` map
+-- items?}) into kora_target's own QBTargetOption shape. `distance`/`bones` map
 -- 1:1 -- ox_target already stores these per-option, unlike qb-target.
 -- `groups`/`items` are passed through UNENFORCED -- see ../../docs.md's
 -- "Opaque fields" section: no ox_core/qb-core exists in this repo to check a
@@ -89,11 +89,11 @@ local function translateOxOptions(options)
             distance = option.distance,
             bones = option.bones,
             -- Passed through as-is, NOT re-wrapped to real ox_target's own
-            -- contract: qbtarget's resolver always calls this with
+            -- contract: kora_target's resolver always calls this with
             -- (entity, distance, data), but real ox_target calls
             -- canInteract(entity, distance, coords, name, bone) -- five
             -- arguments. A ported canInteract reading coords/name/bone off
-            -- its 3rd-5th parameters sees qbtarget's shape instead. See this
+            -- its 3rd-5th parameters sees kora_target's shape instead. See this
             -- file's header and ../../AGENTS.md for why this divergence is
             -- intentionally NOT fixed here.
             canInteract = option.canInteract,
@@ -169,7 +169,7 @@ local addGlobalPed = addGlobal('ped')
 local addGlobalVehicle = addGlobal('vehicle')
 local addGlobalObject = addGlobal('object')
 
--- ox_target zones are already id-based, same as qbtarget's own -- the
+-- ox_target zones are already id-based, same as kora_target's own -- the
 -- cleanest mapping in the suite, no translation table needed.
 local function removeZone(id)
     return Target.removeZone(id)
@@ -215,7 +215,7 @@ end
 
 -- Best-effort: ox_target's exact getState() return shape isn't confidently
 -- known from public knowledge alone (see AGENTS.md's assumptions list).
--- Returns qbtarget's own getState() shape as-is rather than guessing at a
+-- Returns kora_target's own getState() shape as-is rather than guessing at a
 -- reshape that could be wrong in a different way.
 local function getState()
     return Target.getState()

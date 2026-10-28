@@ -403,7 +403,7 @@ local function updateHoveringState(candidates)
     Target.hovering = { kind = top.registration.kind, id = top.registration.id, entity = top.entity, zoneId = top.registration.kind == 'zone' and top.registration.id or nil, option = top.option, optionCount = #candidates }
 end
 
--- qblib owns the transparent NUI root. Targeting remains game-input driven;
+-- kora_lib owns the transparent NUI root. Targeting remains game-input driven;
 -- this is only a compact visual snapshot, never a focus-taking UI.
 -- The snapshot is compared field by field against what was last sent, rather
 -- than against a formatted key string. The old key was rebuilt (and the label
@@ -501,7 +501,7 @@ local function runOption(candidate)
 end
 
 ---Resolves the candidates captured at Alt release. One option is immediate;
----multiple options use qblib's game-input-driven interact selector, so the
+---multiple options use kora_lib's game-input-driven interact selector, so the
 ---player can keep camera control and choose with scroll/arrows plus E.
 local function selectCandidates(candidates)
     if #candidates == 0 then return end
@@ -629,7 +629,7 @@ QB.keybind.add({
 -- Config.target.debug/zoneDebugEnabled (client/state.lua) only ever get read
 -- once, at zone registration time -- flipping the config afterward does
 -- nothing to zones already created. This command is a runtime override layered
--- on top via qblib's own QB.zones.setDebug(nil, ...) (added specifically for
+-- on top via kora_lib's own QB.zones.setDebug(nil, ...) (added specifically for
 -- this), not a replacement for the config default: it lets a developer outline
 -- every already-registered target zone live, without editing config.lua and
 -- restarting the resource. `[on|off]`, or no argument to toggle.

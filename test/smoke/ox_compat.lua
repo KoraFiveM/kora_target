@@ -1,6 +1,6 @@
 local scriptDir = debug.getinfo(1, 'S').source:match('@?(.*/)') or './'
 local resourceRoot = scriptDir .. '../../'
-local qblibTestRoot = resourceRoot .. '../qblib/test/'
+local qblibTestRoot = resourceRoot .. '../kora_lib/test/'
 package.path = qblibTestRoot .. '?.lua;' .. package.path
 
 local harness = require('harness')
@@ -24,7 +24,7 @@ _G.QB = {
         poly = function() return { remove = function() end, contains = function() return false end } end,
     },
 }
-_G.GetCurrentResourceName = function() return 'qbtarget' end
+_G.GetCurrentResourceName = function() return 'kora_target' end
 local invokingResource = 'ox-doorlock'
 _G.GetInvokingResource = function() return invokingResource end
 local resourceStopHandlers = {}
@@ -68,7 +68,7 @@ _G.NetworkGetNetworkIdFromEntity = function(entity) return assert(networkIds[ent
 local networkEntities = {}
 _G.NetworkGetEntityFromNetworkId = function(netId) return networkEntities[netId] end
 
-dofile(resourceRoot .. '../qblib/local/resources/client.lua')
+dofile(resourceRoot .. '../kora_lib/local/resources/client.lua')
 dofile(resourceRoot .. 'config.lua')
 Config.target.testMode = true
 dofile(resourceRoot .. 'client/state.lua')

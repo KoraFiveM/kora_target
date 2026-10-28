@@ -34,7 +34,7 @@ Target.debugEnabled = false
 -- soon as a registration changes. This is not exposed as API state.
 Target.registrationRevision = 0
 
--- qbmultichar sets this replicated state for its character, spawn, and scene
+-- kora_multichar sets this replicated state for its character, spawn, and scene
 -- editor modes. Targeting the preview world would expose real gameplay
 -- actions (beds, banking, doors, etc.) while the player is choosing a spawn.
 function Target.interactionsLocked()
@@ -56,9 +56,9 @@ end
 
 -- FXServer's exports boundary hands a cross-resource function argument back
 -- as a table with a __call metamethod, not a plain Lua function -- a
--- resource-local copy of the same check qblib's own modules use (see e.g.
--- qblib/modules/zones/client.lua), since qbtarget is a separate resource
--- shared through qblib so every compatibility boundary recognizes the same shapes.
+-- resource-local copy of the same check kora_lib's own modules use (see e.g.
+-- kora_lib/modules/zones/client.lua), since kora_target is a separate resource
+-- shared through kora_lib so every compatibility boundary recognizes the same shapes.
 local isCallable = QB.util.isCallable
 
 -- A "coords-like" value: a table with numeric x/y/z, satisfied by both a
@@ -66,11 +66,11 @@ local isCallable = QB.util.isCallable
 -- this file). Used to validate addBoxZone/addSphereZone/addPolyZone's
 -- coords/size/points BEFORE handing them to QB.zones.* -- unlike `options`,
 -- these were previously passed through unchecked, so a malformed call only
--- failed with an opaque error from deep inside qblib.
+-- failed with an opaque error from deep inside kora_lib.
 local function isCoordsLike(x)
     -- Deliberately does NOT gate on type(x) == "table" first: FiveM natives
     -- like GetEntityCoords return vector3 values whose Lua type() is
-    -- "vector3", not "table" (mirrors qblib/modules/zones/client.lua's
+    -- "vector3", not "table" (mirrors kora_lib/modules/zones/client.lua's
     -- toVec3). pcall guards the field reads so a bare number/nil/boolean
     -- fails the check instead of erroring on the index.
     local ok, isNum = pcall(function()
@@ -79,7 +79,7 @@ local function isCoordsLike(x)
     return ok and isNum
 end
 
--- qblib owns the actual debug shape rendering. Keeping the choice here means
+-- kora_lib owns the actual debug shape rendering. Keeping the choice here means
 -- callers can still opt one zone into debugging, while Config.target.debug is
 -- a convenient server-wide override when laying out or diagnosing zones.
 local function zoneDebugEnabled(zoneOptions)
@@ -145,7 +145,7 @@ end
 ---Internal compatibility hook: atomically replaces a live registration's
 ---options/default distance and invalidates the resolver caches. It is kept off
 ---client/exports.lua; qb-target's labeled remove/update API needs option-level
----mutation while qbtarget's native public API remains registration-oriented.
+---mutation while kora_target's native public API remains registration-oriented.
 ---@param id integer
 ---@param options QBTargetOption[]
 ---@param defaultDistance? number
@@ -159,7 +159,7 @@ function Target._replaceOptions(id, options, defaultDistance)
     return true
 end
 
----Applies the active target configuration received from qblib. The resolver
+---Applies the active target configuration received from kora_lib. The resolver
 ---reads Config.target at evaluation time, but its broad-phase maximum and
 ---aim result are revision-cached; touching registrations makes a changed
 ---default distance take effect on the very next resolver pass.
@@ -201,10 +201,10 @@ end
 -- tests while Alt is held is the single largest cost the resolver had.
 --
 -- This is a uniform XY grid over each zone's axis-aligned bounding box,
--- mirroring the one qblib's own modules/zones already keeps for its
--- enter/exit tick (which qbtarget cannot reuse -- that grid answers "which
--- zones are near the PLAYER", and qbtarget deliberately resolves against the
--- AIM point instead; qblib exposes no point query over it either).
+-- mirroring the one kora_lib's own modules/zones already keeps for its
+-- enter/exit tick (which kora_target cannot reuse -- that grid answers "which
+-- zones are near the PLAYER", and kora_target deliberately resolves against the
+-- AIM point instead; kora_lib exposes no point query over it either).
 --
 -- A zone is inserted into EVERY cell its AABB overlaps, so a point query only
 -- ever has to look at the single cell containing that point -- no 3x3
@@ -232,7 +232,7 @@ local zoneUnbounded = {}   -- id -> true
 local zonesWithinSeen = {} -- scratch, see Target.zonesWithin
 local spriteZoneCount = 0
 
--- Same packing qblib/modules/zones/client.lua uses: the world is roughly
+-- Same packing kora_lib/modules/zones/client.lua uses: the world is roughly
 -- +/-8000m, so at 50m cells the component magnitude stays far below the
 -- 100000 stride and can never alias another cell.
 local function zoneCellKey(cx, cy)
@@ -456,9 +456,9 @@ local function sphereBounds(coords, radius)
     }
 end
 
--- minZ/maxZ are only known when the caller gave them explicitly: qblib
+-- minZ/maxZ are only known when the caller gave them explicitly: kora_lib
 -- derives an implicit band from `thickness` against its own config default,
--- which lives in qblib's environment and isn't readable from here. An
+-- which lives in kora_lib's environment and isn't readable from here. An
 -- unbounded vertical band is the correct conservative answer -- the grid is
 -- indexed on XY only, so a tall AABB costs at most one wasted exact test and
 -- can never hide a zone.
@@ -495,7 +495,7 @@ local function idsOf(set)
 end
 
 ---Tears a registration down: drops it from every index it appears in and,
----for a zone-backed registration, removes the underlying qblib zone. Safe to
+---for a zone-backed registration, removes the underlying kora_lib zone. Safe to
 ---call more than once for the same id (a no-op after the first).
 ---@param id integer
 function Target.destroyRegistration(id)
@@ -521,9 +521,9 @@ function Target.destroyRegistration(id)
     elseif registration.kind == "zone" then
         -- The double-layer-ownership fix: QB.zones.box/sphere/poly attribute
         -- the zone's own qblib-internal cleanup to whichever resource called
-        -- INTO qblib -- which is "qbtarget" itself when a third-party
-        -- consumer called exports.qbtarget:addBoxZone, not that consumer.
-        -- qblib's own cleanup-on-stop therefore never fires for the real
+        -- INTO kora_lib -- which is "qbtarget" itself when a third-party
+        -- consumer called exports.kora_target:addBoxZone, not that consumer.
+        -- kora_lib's own cleanup-on-stop therefore never fires for the real
         -- consumer stopping; Target.ownership above (tracked against the
         -- REAL invoking resource, captured in Target.addBoxZone/etc before
         -- ever calling into QB.zones.*) is what has to proactively tear the
@@ -533,9 +533,9 @@ function Target.destroyRegistration(id)
     end
 end
 
--- Keep caller ownership separate from qblib's zone ownership: qblib sees
--- qbtarget as its caller, while this registry tracks the original resource
--- that crossed qbtarget's export boundary.
+-- Keep caller ownership separate from kora_lib's zone ownership: kora_lib sees
+-- kora_target as its caller, while this registry tracks the original resource
+-- that crossed kora_target's export boundary.
 Target.ownership = QB.resources.registry(function(id)
     Target.destroyRegistration(id)
 end)
@@ -543,7 +543,7 @@ end)
 ---Shared by addEntity/addModel/addGlobalType/addGlobalBone: validates
 ---options, allocates an id, captures the real invoking resource, and tracks
 ---ownership. Zone registrations don't use this -- they need the id BEFORE
----creating the underlying qblib zone (so it can be stamped onto the zone's
+---creating the underlying kora_lib zone (so it can be stamped onto the zone's
 ---own `data` field), so they build their registration record directly.
 ---@param kind string
 ---@param extra table Additional fields merged onto the registration (e.g. `entities`, `models`).
@@ -755,7 +755,7 @@ function Target.addBoxZone(zoneOptions)
     -- Captured HERE, before calling into QB.zones.box -- see the "Ownership
     -- subtlety" note on destroyRegistration/Target.ownership above and in
     -- AGENTS.md. By the time QB.zones.box resolves its own
-    -- GetInvokingResource(), the caller will read as "qbtarget", not the
+    -- GetInvokingResource(), the caller will read as "kora_target", not the
     -- real external consumer.
     local owner = GetInvokingResource() or GetCurrentResourceName()
 
@@ -870,8 +870,8 @@ function Target.addPolyZone(zoneOptions)
 end
 
 ---Internal compatibility constructor for a zone supplied by another resource
----(notably qb-target AddComboZone's PolyZone objects). The native qbtarget API
----stays limited to validated qblib shapes; the bridge only needs a contains
+---(notably qb-target AddComboZone's PolyZone objects). The native kora_target API
+---stays limited to validated kora_lib shapes; the bridge only needs a contains
 ---predicate and uses the same ownership/removal/cache machinery as native
 ---zones.
 ---@param contains fun(point: any): boolean
@@ -973,7 +973,7 @@ end
 ---@param entity? number A NETWORKED entity (a real ped/vehicle/player -- NOT QB.entities.create output, which has no server-side twin) to distance-check against. Omit for an action with nothing to validate a distance against.
 ---@param maxDistance? number Overrides Config.target.serverActionMaxDistance.
 ---@param ... any Extra arguments forwarded to the server-side handler.
----@return boolean? ok `nil` if the callback itself failed (timeout/handshake failure -- check qblib's own console). Otherwise `true`/`false` reflecting the server action's own outcome (unknown action name, missing/too-far entity, the handler erroring, or the handler's own deliberate `return false, reason`).
+---@return boolean? ok `nil` if the callback itself failed (timeout/handshake failure -- check kora_lib's own console). Otherwise `true`/`false` reflecting the server action's own outcome (unknown action name, missing/too-far entity, the handler erroring, or the handler's own deliberate `return false, reason`).
 ---@return any ... The handler's own remaining return values on success (`ok == true`), or the failure reason string (`ok == false`). Nothing at all when `ok` is `nil`.
 function Target.runServerAction(name, entity, maxDistance, ...)
     assert(type(name) == "string" and #name > 0, "runServerAction requires a name.")
@@ -987,15 +987,15 @@ function Target.runServerAction(name, entity, maxDistance, ...)
         netId = NetworkGetNetworkIdFromEntity(entity)
     end
 
-    -- qblib's QB.callback module forwards a handler's return values in full
+    -- kora_lib's QB.callback module forwards a handler's return values in full
     -- (multi-value returns end to end) -- server/server.lua's handler
     -- replies with (ok, ...) directly, so there's nothing to unpack here.
     return QB.callback.trigger("qbtarget:server:runAction", name, netId, maxDistance, ...)
 end
 
--- qblib invokes the binding once with the hydrated active snapshot and again
--- after every published live change. Keep this guarded so qbtarget remains
--- usable with older qblib releases during a rolling upgrade.
+-- kora_lib invokes the binding once with the hydrated active snapshot and again
+-- after every published live change. Keep this guarded so kora_target remains
+-- usable with older kora_lib releases during a rolling upgrade.
 if QB.config and QB.config.bind then
-    QB.config.bind('qbtarget', { 'target' }, Target.applyConfig)
+    QB.config.bind('kora_target', { 'target' }, Target.applyConfig)
 end

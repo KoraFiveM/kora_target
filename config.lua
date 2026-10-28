@@ -1,8 +1,8 @@
 Config = {}
 
--- Keep the raw value when this resource is loaded with an older qblib. The
+-- Keep the raw value when this resource is loaded with an older kora_lib. The
 -- descriptor makes this hot-path-safe setting editable live without changing
--- qbtarget's public Config shape.
+-- kora_target's public Config shape.
 local configNumber = QB and QB.config and QB.config.number
 
 Config.target = {
@@ -74,7 +74,7 @@ Config.target = {
     diagnostics = false,
     diagnosticsInterval = 5000,
 
-    -- Development aid: draw qblib's full box/sphere/poly outline for every
+    -- Development aid: draw kora_lib's full box/sphere/poly outline for every
     -- target zone. A zone registered with `debug = true` is also outlined
     -- when this is false; set this to true to inspect all zone bounds at once.
     debug = false,
@@ -99,10 +99,10 @@ Config.target = {
     serverActionMaxDistance = 5.0, -- meters; default cap Target.runServerAction's server-side distance check enforces
 
     reticle = true,                -- draw a small centre-screen dot while holding the key, so targeting mode is VISIBLE even when nothing is under the crosshair (brightens over a target). Set false for a fully headless engine.
-    demo = false,                  -- development-only global ped/vehicle targets; enable explicitly when testing qbtarget itself.
+    demo = false,                  -- development-only global ped/vehicle targets; enable explicitly when testing kora_target itself.
 }
 
--- Registers this resource-owned configuration with qblib without changing its public Config table.
+-- Registers this resource-owned configuration with kora_lib without changing its public Config table.
 if QB and QB.config and QB.config.adopt then
     Config.target.sprites.offset.x = QB.config.number(Config.target.sprites.offset.x, { label = 'Icon east-west offset (metres)', advanced = true })
     Config.target.sprites.offset.y = QB.config.number(Config.target.sprites.offset.y, { label = 'Icon north-south offset (metres)', advanced = true })

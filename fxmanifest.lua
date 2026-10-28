@@ -2,13 +2,15 @@ fx_version 'cerulean'
 game 'gta5'
 lua54 'yes'
 
-name 'qbtarget'
+name 'kora_target'
+-- Keep the legacy resource name resolvable for exports['qbtarget'] callers.
+provide 'qbtarget'
 author 'Jamie'
 version '1.0.0'
 description 'World/zone/model targeting engine built on qblib'
 
 dependencies {
-    'qblib'
+    'kora_lib'
 }
 
 -- Makes this ONE resource a true drop-in for scripts calling
@@ -24,20 +26,20 @@ provide 'qb-target'
 provide 'ox_target'
 
 -- Required to reach QB.raycast/QB.zones/QB.world/QB.drawing/QB.nui/QB.cache/
--- QB.callback/QB.resources -- see qblib's own AGENTS.md for why this is how a
+-- QB.callback/QB.resources -- see kora_lib's own AGENTS.md for why this is how a
 -- consumer resource pulls in the QB proxy (init.lua).
-shared_script '@qblib/init.lua'
+shared_script '@kora_lib/init.lua'
 
 shared_scripts {
     'config.lua'
 }
 
 -- state.lua must load before everything below references Target.addEntity
--- etc -- listed explicitly rather than globbed for the same reason qblib's
+-- etc -- listed explicitly rather than globbed for the same reason kora_lib's
 -- own fxmanifest lists local/** explicitly: alphabetic glob order would put
 -- exports.lua before state.lua ever defines anything on it. The two compat
 -- files only need to load after state.lua (they call Target.* directly,
--- same-resource -- no exports.qbtarget: round trip needed internally), so
+-- same-resource -- no exports.kora_target: round trip needed internally), so
 -- their relative order versus loop.lua/exports.lua doesn't matter.
 client_scripts {
     'client/state.lua',
