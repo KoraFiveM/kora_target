@@ -873,7 +873,8 @@ function Target.addPolyZone(zoneOptions)
         options = options,
         distance = zoneOptions.distance,
         zoneHandle = zoneHandle,
-        spriteCoords = polySpriteCoords(zoneOptions.points),
+        -- Callers may place the icon at the counter instead of the poly centre.
+        spriteCoords = zoneOptions.spriteCoords and copyCoords(zoneOptions.spriteCoords) or polySpriteCoords(zoneOptions.points),
         drawSprite = zoneOptions.drawSprite ~= false,
         spriteOverride = zoneOptions.drawSprite == true,
     }, polyBounds(zoneOptions.points, zoneOptions.minZ, zoneOptions.maxZ))
