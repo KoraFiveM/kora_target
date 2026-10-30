@@ -5,6 +5,7 @@ local currentCandidates = {}
 local candidatePool = {}
 local currentRaycastEntity
 local menuPed, menuPedWasFrozen
+local menuHintShown = false
 
 -- Runtime-only resolver state. This cache never decides authority; it simply
 -- avoids resolving the same world/registration combination more often than a
@@ -68,6 +69,8 @@ end
 local function closeTargetMenu()
     if menuOpen then QB.interact.close() end
     menuOpen = false
+    if menuHintShown then ClearAllHelpMessages() end
+    menuHintShown = false
     setMenuPositionFrozen(false)
 end
 
@@ -490,6 +493,24 @@ local function resolverWait()
     return Config.target.tickMiss
 end
 
+-- The menu works from the snapshot taken at release, so check that at least one
+-- snapshotted option can still be reached from where the player is now. The
+-- raycast anchor is stale for a moving entity, so use the entity's live position.
+local function menuTargetInRange(candidates)
+    local pedCoords = GetEntityCoords(PlayerPedId())
+    for _, candidate in ipairs(candidates) do
+        local entity = candidate.entity
+        local entityValid = not entity or entity == 0 or DoesEntityExist(entity)
+        if entityValid then
+            local anchor = entity and entity ~= 0 and GetEntityCoords(entity) or candidate.anchorCoords
+            local registration = candidate.registration
+            local maxDistance = candidate.option.distance or registration.distance or Config.target.defaultOptionDistance
+            if anchor and distanceSq(pedCoords, anchor) <= maxDistance * maxDistance then return true end
+        end
+    end
+    return false
+end
+
 local function runOption(candidate)
     local ok, err
     if candidate.option._onSelectContext then
@@ -518,10 +539,27 @@ local function selectCandidates(candidates)
 
     menuOpen = QB.interact.open(items)
     if not menuOpen then return end
-    setMenuPositionFrozen(true)
+    if Config.target.freezeOnMenu then setMenuPositionFrozen(true) end
 
+    -- kora_lib's selector has no footer, so use a one-off native help message.
+    if Config.target.showCloseHint then
+        BeginTextCommandDisplayHelp('STRING')
+        AddTextComponentSubstringPlayerName('Press ~INPUT_FRONTEND_PAUSE_ALTERNATE~ to close')
+        EndTextCommandDisplayHelp(0, false, false, 5000)
+        menuHintShown = true
+    end
+
+    -- Reuses the selector's existing per-frame wait; the range check is throttled.
     CreateThread(function()
+        local nextRangeCheck = 0
         while QB.interact.isActive() do
+            if Config.target.closeMenuOutOfRange then
+                local now = GetGameTimer()
+                if now >= nextRangeCheck then
+                    nextRangeCheck = now + Config.target.tickActive
+                    if not menuTargetInRange(candidates) then break end
+                end
+            end
             Wait(0)
         end
         closeTargetMenu()
@@ -673,6 +711,7 @@ if Config.target.testMode then
         aimIsStatic = aimIsStatic,
         resetRuntimeState = resetRuntimeState,
         selectCandidates = selectCandidates,
+        menuTargetInRange = menuTargetInRange,
         closeTargetMenu = closeTargetMenu,
         resolveCandidates = resolveCandidates,
         resolverWait = function(candidates, entity)

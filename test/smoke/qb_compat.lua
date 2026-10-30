@@ -91,6 +91,10 @@ _G.CreatePed = function(pedType, model, x, y, z, heading, networked, missionPed)
 end
 _G.DeletePed = function(ped) deletedPeds[#deletedPeds + 1] = ped end
 _G.FreezeEntityPosition = function(ped, state) frozenPeds[ped] = state end
+_G.BeginTextCommandDisplayHelp = function() end
+_G.AddTextComponentSubstringPlayerName = function() end
+_G.EndTextCommandDisplayHelp = function() end
+_G.ClearAllHelpMessages = function() end
 _G.SetEntityInvincible = function(ped, state) invinciblePeds[ped] = state end
 _G.SetBlockingOfNonTemporaryEvents = function(ped, state) blockedPeds[ped] = state end
 _G.RequestAnimDict = function() end

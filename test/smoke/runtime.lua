@@ -91,7 +91,13 @@ _G.GetGameTimer = function() return now end
 _G.PlayerPedId = function() return 1 end
 _G.IsEntityPositionFrozen = function(entity) return frozenEntities[entity] == true end
 _G.FreezeEntityPosition = function(entity, frozen) frozenEntities[entity] = frozen end
-_G.GetEntityCoords = function() return { x = 0, y = 0, z = 0 } end
+local entityCoords = { x = 0, y = 0, z = 0 }
+local helpMessages, helpCleared = 0, 0
+_G.GetEntityCoords = function() return entityCoords end
+_G.BeginTextCommandDisplayHelp = function() end
+_G.AddTextComponentSubstringPlayerName = function() end
+_G.EndTextCommandDisplayHelp = function() helpMessages = helpMessages + 1 end
+_G.ClearAllHelpMessages = function() helpCleared = helpCleared + 1 end
 _G.GetGameplayCamCoord = function() return { x = 0, y = 0, z = 0 } end
 _G.GetGameplayCamRot = function() return { x = 0, y = 0, z = 0 } end
 _G.GetScreenCoordFromWorldCoord = function() return false, 0, 0 end
@@ -280,6 +286,38 @@ harness.test('zone candidates are matched against the aim point, not the player 
         'an aim point outside the zone must not surface it, even with the ped well within its configured distance')
     harness.assertEqual(#runtime.zoneRegistrationsAt({ x = 5, y = 0, z = 0 }), 1,
         'an aim point inside the zone must surface it regardless of where the ped is standing')
+end)
+
+harness.test('freezeOnMenu=false never freezes the ped, and the default does', function()
+    local candidates = {
+        { option = { label = 'A', onSelect = function() end }, registration = {}, anchorCoords = entityCoords },
+        { option = { label = 'B', onSelect = function() end }, registration = {}, anchorCoords = entityCoords },
+    }
+    runtime.closeTargetMenu()
+    frozenEntities[1] = nil
+    Config.target.freezeOnMenu = false
+    runtime.selectCandidates(candidates)
+    harness.assertTrue(not frozenEntities[1], 'freezeOnMenu=false must not freeze the ped')
+    runtime.closeTargetMenu()
+
+    Config.target.freezeOnMenu = true
+    runtime.selectCandidates(candidates)
+    harness.assertTrue(frozenEntities[1], 'default config must keep the freeze')
+    runtime.closeTargetMenu()
+    harness.assertTrue(not frozenEntities[1], 'closing the menu always unfreezes')
+    harness.assertTrue(helpMessages > 0 and helpCleared > 0, 'close hint is shown and cleared with the menu')
+end)
+
+harness.test('menu range check fails once every target is out of reach', function()
+    local candidate = { option = { label = 'A', distance = 2.0 }, registration = {}, anchorCoords = { x = 1, y = 0, z = 0 } }
+    harness.assertTrue(runtime.menuTargetInRange({ candidate }), 'target within distance keeps the menu open')
+    candidate.anchorCoords = { x = 10, y = 0, z = 0 }
+    harness.assertTrue(not runtime.menuTargetInRange({ candidate }), 'target beyond distance closes the menu')
+    local savedDoes = _G.DoesEntityExist
+    _G.DoesEntityExist = function() return false end
+    candidate.anchorCoords, candidate.entity = { x = 1, y = 0, z = 0 }, 77
+    harness.assertTrue(not runtime.menuTargetInRange({ candidate }), 'a vanished entity closes the menu')
+    _G.DoesEntityExist = savedDoes
 end)
 
 harness.test('global zone debug and individual sprite visibility are retained on registrations', function()

@@ -98,6 +98,12 @@ Config.target = {
 
     serverActionMaxDistance = 5.0, -- meters; default cap Target.runServerAction's server-side distance check enforces
 
+    -- Holding still while the multi-option menu is open stops the snapshot from
+    -- going stale. Turn off to let the player keep moving while it is open.
+    freezeOnMenu = true,
+    closeMenuOutOfRange = true,    -- close the open menu when its target moves or the player walks out of range
+    showCloseHint = true,          -- show a short "press to close" help message when the menu opens
+
     reticle = true,                -- draw a small centre-screen dot while holding the key, so targeting mode is VISIBLE even when nothing is under the crosshair (brightens over a target). Set false for a fully headless engine.
     demo = false,                  -- development-only global ped/vehicle targets; enable explicitly when testing kora_target itself.
 }
@@ -122,6 +128,9 @@ if QB and QB.config and QB.config.adopt then
     Config.target.sprites.name = QB.config.string(Config.target.sprites.name, { label = 'Icon texture name', advanced = true })
     Config.target.sprites.width = QB.config.number(Config.target.sprites.width, { label = 'Icon screen width', advanced = true })
     Config.target.sprites.height = QB.config.number(Config.target.sprites.height, { label = 'Icon screen height', advanced = true })
+    Config.target.freezeOnMenu = QB.config.boolean(Config.target.freezeOnMenu, { label = 'Hold player still in option menu', advanced = false })
+    Config.target.closeMenuOutOfRange = QB.config.boolean(Config.target.closeMenuOutOfRange, { label = 'Close option menu when out of range', advanced = false })
+    Config.target.showCloseHint = QB.config.boolean(Config.target.showCloseHint, { label = 'Show option menu close hint', advanced = false })
     Config.target.toggle = QB.config.boolean(Config.target.toggle, { label = 'Press to toggle targeting', advanced = false })
     Config.target.maxDistance = QB.config.number(Config.target.maxDistance, { label = 'Target search distance (metres)', advanced = false })
     Config.target.legacyMaxDistance = QB.config.number(Config.target.legacyMaxDistance, { label = 'Legacy target distance (metres)', advanced = true })
@@ -163,6 +172,9 @@ if QB and QB.config and QB.config.adopt then
         ['target.diagnostics'] = 'Print targeting workload summaries for troubleshooting.',
         ['target.diagnosticsInterval'] = 'Time between workload summaries while performance logging is enabled and targeting runs.',
         ['target.debug'] = 'Show zone outlines for setup and troubleshooting. Individual zones may also request their own outlines.',
+        ['target.freezeOnMenu'] = 'Hold the player still while the multiple-option menu is open. Turn off to allow movement.',
+        ['target.closeMenuOutOfRange'] = 'Close the multiple-option menu when its target is no longer within reach.',
+        ['target.showCloseHint'] = 'Show a short message explaining how to close the multiple-option menu.',
         ['target.sprites.enabled'] = 'Show nearby icons for fixed interaction zones that allow them.',
         ['target.sprites.drawDistance'] = 'Maximum distance at which fixed interaction location icons are drawn.',
         ['target.sprites.offset'] = 'Move location icons away from their zone anchor using world directions.',
