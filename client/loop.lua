@@ -66,6 +66,48 @@ local function setMenuPositionFrozen(frozen)
     menuPed, menuPedWasFrozen = nil, nil
 end
 
+-- Resolves how the open menu treats player movement. menuMovement wins when it
+-- is a known mode; otherwise the legacy freezeOnMenu boolean maps onto it, so a
+-- server that only ever set freezeOnMenu = true keeps its freeze.
+local MENU_MOVEMENT_MODES = { freeze = true, close = true, allow = true }
+local function menuMovementMode()
+    local mode = Config.target.menuMovement
+    if MENU_MOVEMENT_MODES[mode] then return mode end
+    return Config.target.freezeOnMenu and 'freeze' or 'allow'
+end
+
+-- Move LR/UD, sprint, jump, cover, stealth and the directional keys.
+local MENU_MOVE_CONTROLS = { 21, 22, 30, 31, 32, 33, 34, 35, 36, 44 }
+local MENU_LOOK_CONTROLS = { 1, 2 }
+
+local function menuMovementPressed()
+    if math.abs(GetControlNormal(0, 30)) > 0.1 or math.abs(GetControlNormal(0, 31)) > 0.1 then return true end
+    for _, control in ipairs(MENU_MOVE_CONTROLS) do
+        if IsControlPressed(0, control) then return true end
+    end
+    return false
+end
+
+-- One frame of menu input policy, run from the menu-open loop. Returns true
+-- when the menu should close (menuMovement = 'close' and a movement key went
+-- down). Movement already held when the menu opened does not count until it is
+-- released and pressed again, so releasing Alt mid-stride does not dismiss it.
+local function menuInputFrame(mode, state)
+    if mode == 'freeze' then
+        for _, control in ipairs(MENU_MOVE_CONTROLS) do DisableControlAction(0, control, true) end
+    end
+    if Config.target.lockCameraOnMenu then
+        for _, control in ipairs(MENU_LOOK_CONTROLS) do DisableControlAction(0, control, true) end
+    end
+    if mode == 'close' then
+        local moving = menuMovementPressed()
+        local started = moving and not state.moving
+        state.moving = moving
+        return started
+    end
+    return false
+end
+
 local function closeTargetMenu()
     if menuOpen then QB.interact.close() end
     menuOpen = false
@@ -73,6 +115,11 @@ local function closeTargetMenu()
     menuHintShown = false
     setMenuPositionFrozen(false)
 end
+
+-- Never leave the ped frozen if this resource stops while a menu is open.
+AddEventHandler('onResourceStop', function(resource)
+    if resource == GetCurrentResourceName() then closeTargetMenu() end
+end)
 
 -- Internal compatibility hook for qb-target's DisableTarget(true). That
 -- export cancels only the current targeting session; it does not change the
@@ -539,7 +586,8 @@ local function selectCandidates(candidates)
 
     menuOpen = QB.interact.open(items)
     if not menuOpen then return end
-    if Config.target.freezeOnMenu then setMenuPositionFrozen(true) end
+    local movementMode = menuMovementMode()
+    if movementMode == 'freeze' then setMenuPositionFrozen(true) end
 
     -- kora_lib's selector has no footer, so use a one-off native help message.
     if Config.target.showCloseHint then
@@ -552,7 +600,9 @@ local function selectCandidates(candidates)
     -- Reuses the selector's existing per-frame wait; the range check is throttled.
     CreateThread(function()
         local nextRangeCheck = 0
+        local inputState = { moving = movementMode == 'close' and menuMovementPressed() }
         while QB.interact.isActive() do
+            if menuInputFrame(movementMode, inputState) then break end
             if Config.target.closeMenuOutOfRange then
                 local now = GetGameTimer()
                 if now >= nextRangeCheck then
@@ -713,6 +763,8 @@ if Config.target.testMode then
         selectCandidates = selectCandidates,
         menuTargetInRange = menuTargetInRange,
         closeTargetMenu = closeTargetMenu,
+        menuMovementMode = menuMovementMode,
+        menuInputFrame = menuInputFrame,
         resolveCandidates = resolveCandidates,
         resolverWait = function(candidates, entity)
             currentCandidates, currentRaycastEntity = candidates, entity

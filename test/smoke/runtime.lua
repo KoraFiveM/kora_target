@@ -683,4 +683,104 @@ harness.test('a motionless camera and ped let a tick reuse the previous resolve,
     Config.target.staticMissRefresh = previous
 end)
 
+local disabledControls, pressedControls, controlNormals = {}, {}, {}
+_G.DisableControlAction = function(_, control, disabled) if disabled then disabledControls[control] = true end end
+_G.IsControlPressed = function(_, control) return pressedControls[control] == true end
+_G.GetControlNormal = function(_, control) return controlNormals[control] or 0.0 end
+
+local function resetMenuInput()
+    disabledControls, pressedControls, controlNormals = {}, {}, {}
+    Config.target.menuMovement, Config.target.freezeOnMenu, Config.target.lockCameraOnMenu = nil, false, false
+    runtime.closeTargetMenu()
+    frozenEntities[1] = nil
+end
+
+local menuCandidates = {
+    { option = { label = 'A', onSelect = function() end }, registration = {}, anchorCoords = entityCoords },
+    { option = { label = 'B', onSelect = function() end }, registration = {}, anchorCoords = entityCoords },
+}
+
+harness.test('menuMovement defaults to allow and maps legacy freezeOnMenu when unset', function()
+    resetMenuInput()
+    harness.assertEqual(runtime.menuMovementMode(), 'allow', 'default must allow free movement')
+    Config.target.freezeOnMenu = true
+    harness.assertEqual(runtime.menuMovementMode(), 'freeze', 'freezeOnMenu=true with no menuMovement behaves as freeze')
+    Config.target.menuMovement = 'close'
+    harness.assertEqual(runtime.menuMovementMode(), 'close', 'an explicit menuMovement wins over freezeOnMenu')
+    Config.target.menuMovement = 'allow'
+    harness.assertEqual(runtime.menuMovementMode(), 'allow', 'explicit allow wins over freezeOnMenu')
+    Config.target.menuMovement = 'bogus'
+    harness.assertEqual(runtime.menuMovementMode(), 'freeze', 'an unknown value falls back to the legacy mapping')
+    resetMenuInput()
+end)
+
+harness.test('menuMovement=freeze freezes the ped and disables movement controls each frame', function()
+    resetMenuInput()
+    Config.target.menuMovement = 'freeze'
+    runtime.selectCandidates(menuCandidates)
+    harness.assertTrue(frozenEntities[1], 'freeze mode freezes the ped')
+    local state = {}
+    harness.assertFalse(runtime.menuInputFrame('freeze', state), 'freeze mode never closes on input')
+    for _, control in ipairs({ 21, 22, 30, 31, 32, 33, 34, 35, 36, 44 }) do
+        harness.assertTrue(disabledControls[control], 'movement control ' .. control .. ' must be disabled')
+    end
+    harness.assertTrue(not disabledControls[1] and not disabledControls[2], 'camera stays free unless lockCameraOnMenu')
+    runtime.closeTargetMenu()
+    harness.assertFalse(frozenEntities[1], 'closing releases the freeze')
+    resetMenuInput()
+end)
+
+harness.test('menuMovement=allow neither freezes nor disables controls nor closes', function()
+    resetMenuInput()
+    Config.target.menuMovement = 'allow'
+    runtime.selectCandidates(menuCandidates)
+    harness.assertTrue(not frozenEntities[1], 'allow mode must not freeze')
+    pressedControls[32] = true
+    harness.assertFalse(runtime.menuInputFrame('allow', {}), 'movement does not close in allow mode')
+    harness.assertTrue(next(disabledControls) == nil, 'allow mode disables no controls')
+    resetMenuInput()
+end)
+
+harness.test('menuMovement=close closes on a new movement press but not on movement held at open', function()
+    resetMenuInput()
+    Config.target.menuMovement = 'close'
+    runtime.selectCandidates(menuCandidates)
+    harness.assertTrue(not frozenEntities[1], 'close mode must not freeze')
+    local state = { moving = false }
+    harness.assertFalse(runtime.menuInputFrame('close', state), 'no input keeps the menu open')
+    pressedControls[32] = true
+    harness.assertTrue(runtime.menuInputFrame('close', state), 'pressing W closes the menu')
+    resetMenuInput()
+    pressedControls[21] = true
+    local held = { moving = true }
+    harness.assertFalse(runtime.menuInputFrame('close', held), 'movement held since before opening does not close')
+    pressedControls[21] = nil
+    runtime.menuInputFrame('close', held)
+    controlNormals[31] = -1.0
+    harness.assertTrue(runtime.menuInputFrame('close', held), 'analogue stick movement after release closes')
+    harness.assertTrue(next(disabledControls) == nil, 'close mode disables no controls')
+    resetMenuInput()
+end)
+
+harness.test('lockCameraOnMenu disables look controls only when enabled', function()
+    resetMenuInput()
+    runtime.menuInputFrame('allow', {})
+    harness.assertTrue(not disabledControls[1] and not disabledControls[2], 'default leaves the camera free')
+    Config.target.lockCameraOnMenu = true
+    runtime.menuInputFrame('allow', {})
+    harness.assertTrue(disabledControls[1] and disabledControls[2], 'lockCameraOnMenu disables LookLR and LookUD')
+    harness.assertTrue(not disabledControls[32], 'camera lock alone leaves movement enabled')
+    resetMenuInput()
+end)
+
+harness.test('every close path releases the freeze', function()
+    resetMenuInput()
+    Config.target.menuMovement = 'freeze'
+    runtime.selectCandidates(menuCandidates)
+    harness.assertTrue(frozenEntities[1], 'frozen while open')
+    Target._cancelCurrentTargeting()
+    harness.assertFalse(frozenEntities[1], 'cancelling targeting (also the path taken on resource stop) releases the freeze')
+    resetMenuInput()
+end)
+
 harness.report('qbtarget runtime')

@@ -102,9 +102,15 @@ Config.target = {
 
     serverActionMaxDistance = 5.0, -- meters; default cap Target.runServerAction's server-side distance check enforces
 
-    -- Holding still while the multi-option menu is open stops the snapshot from
-    -- going stale. Turn off to let the player keep moving while it is open.
+    -- What player movement does while the multi-option menu is open:
+    --   'freeze' = hold the ped still and ignore movement keys (no walk-in-place)
+    --   'close'  = pressing a movement key closes the menu; the player walks away
+    --   'allow'  = free movement (closeMenuOutOfRange still applies)
+    -- Leave it unset to follow the legacy freezeOnMenu flag below.
+    menuMovement = nil,
+    -- Legacy flag, still honoured when menuMovement is unset: true = 'freeze', false = 'allow'.
     freezeOnMenu = false,
+    lockCameraOnMenu = false,      -- also lock the gameplay camera (look controls) while the menu is open
     closeMenuOutOfRange = true,    -- close the open menu when its target moves or the player walks out of range
     showCloseHint = true,          -- show a short "press to close" help message when the menu opens
 
@@ -132,7 +138,14 @@ if QB and QB.config and QB.config.adopt then
     Config.target.sprites.name = QB.config.string(Config.target.sprites.name, { label = 'Icon texture name', advanced = true })
     Config.target.sprites.width = QB.config.number(Config.target.sprites.width, { label = 'Icon screen width', advanced = true })
     Config.target.sprites.height = QB.config.number(Config.target.sprites.height, { label = 'Icon screen height', advanced = true })
-    Config.target.freezeOnMenu = QB.config.boolean(Config.target.freezeOnMenu, { label = 'Hold player still in option menu', advanced = false })
+    Config.target.freezeOnMenu = QB.config.boolean(Config.target.freezeOnMenu, { label = 'Hold player still in option menu (legacy)', advanced = true })
+    -- Unset menuMovement follows the legacy freezeOnMenu flag.
+    local menuMovementDefault = Config.target.menuMovement
+    if menuMovementDefault ~= 'freeze' and menuMovementDefault ~= 'close' and menuMovementDefault ~= 'allow' then
+        menuMovementDefault = Config.target.freezeOnMenu and 'freeze' or 'allow'
+    end
+    Config.target.menuMovement = QB.config.enum(menuMovementDefault, { label = 'Movement while option menu is open', advanced = false, options = { 'freeze', 'close', 'allow' } })
+    Config.target.lockCameraOnMenu = QB.config.boolean(Config.target.lockCameraOnMenu, { label = 'Lock camera while option menu is open', advanced = false })
     Config.target.closeMenuOutOfRange = QB.config.boolean(Config.target.closeMenuOutOfRange, { label = 'Close option menu when out of range', advanced = false })
     Config.target.showCloseHint = QB.config.boolean(Config.target.showCloseHint, { label = 'Show option menu close hint', advanced = false })
     Config.target.sprites.allowPerZoneOverride = QB.config.boolean(Config.target.sprites.allowPerZoneOverride, { label = 'Let zones show icons individually', advanced = false })
@@ -177,7 +190,9 @@ if QB and QB.config and QB.config.adopt then
         ['target.diagnostics'] = 'Print targeting workload summaries for troubleshooting.',
         ['target.diagnosticsInterval'] = 'Time between workload summaries while performance logging is enabled and targeting runs.',
         ['target.debug'] = 'Show zone outlines for setup and troubleshooting. Individual zones may also request their own outlines.',
-        ['target.freezeOnMenu'] = 'Hold the player still while the multiple-option menu is open. Turn off to allow movement.',
+        ['target.menuMovement'] = 'Movement while the multiple-option menu is open: freeze holds the player still, close closes the menu when a movement key is pressed, allow lets the player move freely.',
+        ['target.freezeOnMenu'] = 'Legacy: used as freeze (on) or allow (off) only when Movement while option menu is open was never set.',
+        ['target.lockCameraOnMenu'] = 'Lock the gameplay camera while the multiple-option menu is open.',
         ['target.closeMenuOutOfRange'] = 'Close the multiple-option menu when its target is no longer within reach.',
         ['target.showCloseHint'] = 'Show a short message explaining how to close the multiple-option menu.',
         ['target.sprites.allowPerZoneOverride'] = 'Allow a zone that asks for its own icon to show it even when location icons are turned off globally.',
