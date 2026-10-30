@@ -320,6 +320,39 @@ harness.test('menu range check fails once every target is out of reach', functio
     _G.DoesEntityExist = savedDoes
 end)
 
+harness.test('sprite visibility honours global switch, per-zone override and allowPerZoneOverride', function()
+    local settings = Config.target.sprites
+    local saved = { settings.enabled, settings.allowPerZoneOverride }
+    local near = { x = 0, y = 0, z = 0 }
+    local function zone(drawSprite)
+        local id = Target.addSphereZone({
+            coords = { x = 0, y = 0, z = 0 }, radius = 1.0, drawSprite = drawSprite,
+            options = {{ label = 'S', onSelect = function() end }},
+        })
+        return Target.registrations[id]
+    end
+    local unset, forced, hidden = zone(nil), zone(true), zone(false)
+
+    for _, enabled in ipairs({ true, false }) do
+        for _, allow in ipairs({ true, false }) do
+            settings.enabled, settings.allowPerZoneOverride = enabled, allow
+            local label = ('enabled=%s allow=%s'):format(enabled, allow)
+            harness.assertEqual(sprites.canDraw(unset, near, settings), enabled, 'unset zone follows global: ' .. label)
+            harness.assertEqual(sprites.canDraw(forced, near, settings), enabled or allow, 'forced zone: ' .. label)
+            harness.assertEqual(sprites.canDraw(hidden, near, settings), false, 'opted-out zone never draws: ' .. label)
+        end
+    end
+
+    settings.enabled = false
+    settings.allowPerZoneOverride = false
+    harness.assertTrue(not sprites.hasEnabledZone(), 'override ignored when not allowed')
+    settings.allowPerZoneOverride = true
+    harness.assertTrue(sprites.hasEnabledZone(), 'override zone keeps a worker eligible when allowed')
+
+    settings.enabled, settings.allowPerZoneOverride = saved[1], saved[2]
+    Target.removeZone(unset.id); Target.removeZone(forced.id); Target.removeZone(hidden.id)
+end)
+
 harness.test('global zone debug and individual sprite visibility are retained on registrations', function()
     local priorDebug = Config.target.debug
     Config.target.debug = true

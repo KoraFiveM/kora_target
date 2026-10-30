@@ -231,6 +231,7 @@ local zoneBoundsOf = {}    -- id -> aabb, absent for an unbounded zone
 local zoneUnbounded = {}   -- id -> true
 local zonesWithinSeen = {} -- scratch, see Target.zonesWithin
 local spriteZoneCount = 0
+local spriteOverrideCount = 0
 
 -- Same packing kora_lib/modules/zones/client.lua uses: the world is roughly
 -- +/-8000m, so at 50m cells the component magnitude stays far below the
@@ -375,6 +376,13 @@ function Target.hasSpriteZone()
     return spriteZoneCount > 0
 end
 
+---True when a zone explicitly asked for drawSprite = true, which can show its
+---sprite even while sprites are globally disabled.
+---@return boolean
+function Target.hasSpriteOverrideZone()
+    return spriteOverrideCount > 0
+end
+
 -- The largest interact distance any zone option can use. client/loop.lua
 -- compares it against the ped->aim-point distance, which is identical for
 -- every zone candidate in a given tick (a zone candidate's anchor IS the
@@ -413,6 +421,7 @@ local function registerZone(id, registration, bounds)
     indexZone(id, bounds)
     if registration.drawSprite and registration.spriteCoords then
         spriteZoneCount = spriteZoneCount + 1
+        if registration.spriteOverride then spriteOverrideCount = spriteOverrideCount + 1 end
     end
     syncSpriteLoop()
     touchRegistrations()
@@ -426,6 +435,7 @@ local function unregisterZone(id, registration)
     unindexZone(id)
     if registration.drawSprite and registration.spriteCoords then
         spriteZoneCount = spriteZoneCount - 1
+        if registration.spriteOverride then spriteOverrideCount = spriteOverrideCount - 1 end
     end
 end
 
@@ -775,6 +785,7 @@ function Target.addBoxZone(zoneOptions)
         zoneHandle = zoneHandle,
         spriteCoords = copyCoords(zoneOptions.coords),
         drawSprite = zoneOptions.drawSprite ~= false,
+        spriteOverride = zoneOptions.drawSprite == true,
     }, boxBounds(zoneOptions.coords, zoneOptions.size, zoneOptions.rotation))
     Target.ownership.track(owner, id)
 
@@ -816,6 +827,7 @@ function Target.addSphereZone(zoneOptions)
         zoneHandle = zoneHandle,
         spriteCoords = copyCoords(zoneOptions.coords),
         drawSprite = zoneOptions.drawSprite ~= false,
+        spriteOverride = zoneOptions.drawSprite == true,
     }, sphereBounds(zoneOptions.coords, zoneOptions.radius))
     Target.ownership.track(owner, id)
 
@@ -863,6 +875,7 @@ function Target.addPolyZone(zoneOptions)
         zoneHandle = zoneHandle,
         spriteCoords = polySpriteCoords(zoneOptions.points),
         drawSprite = zoneOptions.drawSprite ~= false,
+        spriteOverride = zoneOptions.drawSprite == true,
     }, polyBounds(zoneOptions.points, zoneOptions.minZ, zoneOptions.maxZ))
     Target.ownership.track(owner, id)
 
@@ -900,6 +913,7 @@ function Target._addCustomZone(contains, options, defaultDistance, spriteCoords,
         zoneHandle = zoneHandle,
         spriteCoords = spriteCoords,
         drawSprite = spriteCoords ~= nil and drawSprite ~= false,
+        spriteOverride = spriteCoords ~= nil and drawSprite == true,
         targetEntity = targetEntity,
     }, bounds)
     Target.ownership.track(owner, id)

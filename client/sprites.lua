@@ -8,8 +8,14 @@ local function squaredDistance(a, b)
     return x * x + y * y + z * z
 end
 
+-- An explicit per-zone drawSprite = true can bypass the global switch, but only
+-- while allowPerZoneOverride is on.
+local function spriteAllowed(registration, settings)
+    return settings.enabled or (settings.allowPerZoneOverride and registration.spriteOverride)
+end
+
 local function canDrawSprite(registration, playerCoords, settings)
-    if not settings.enabled or registration.drawSprite == false or not registration.spriteCoords then
+    if not spriteAllowed(registration, settings) or registration.drawSprite == false or not registration.spriteCoords then
         return false
     end
 
@@ -34,9 +40,22 @@ end
 -- pressure for no benefit.
 local nearbyZones = {}
 
+-- Checked twice per iteration by the worker below (loop condition + restart
+-- guard), at frame cadence while anything is drawing, so this must not be a
+-- registry walk. client/state.lua keeps the count as zones are registered and
+-- destroyed; drawSprite/spriteCoords are fixed at registration time and never
+-- mutate afterwards, so a counter can't drift out of sync with a walk.
+local function hasSpriteEnabledZone()
+    local settings = Config.target.sprites
+    if not settings then return false end
+    if settings.enabled then return Target.hasSpriteZone() end
+
+    return settings.allowPerZoneOverride == true and Target.hasSpriteOverrideZone()
+end
+
 local function drawZoneSprites()
     local settings = Config.target.sprites
-    if not settings or not settings.enabled then return false end
+    if not settings or not hasSpriteEnabledZone() then return false end
     if type(settings.dict) ~= 'string' or type(settings.name) ~= 'string' then return false end
     if not ensureTexture(settings.dict) then return false end
 
@@ -70,18 +89,6 @@ local function drawZoneSprites()
     end
 
     return drewAny
-end
-
--- Checked twice per iteration by the worker below (loop condition + restart
--- guard), at frame cadence while anything is drawing, so this must not be a
--- registry walk. client/state.lua keeps the count as zones are registered and
--- destroyed; drawSprite/spriteCoords are fixed at registration time and never
--- mutate afterwards, so a counter can't drift out of sync with a walk.
-local function hasSpriteEnabledZone()
-    local settings = Config.target.sprites
-    if not settings or not settings.enabled then return false end
-
-    return Target.hasSpriteZone()
 end
 
 local spriteThreadRunning = false

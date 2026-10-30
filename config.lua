@@ -85,6 +85,10 @@ Config.target = {
     -- entity just to draw icons would be needlessly expensive.
     sprites = {
         enabled = false,
+        -- When true, a zone registered with drawSprite = true shows its sprite
+        -- even while `enabled` is false. Zones that do not set drawSprite are
+        -- unaffected.
+        allowPerZoneOverride = true,
         drawDistance = 20.0, -- meters; sprite draw work is skipped beyond this
         offset = { x = 0.0, y = 0.0, z = 0.45 },
         dict = 'shared',
@@ -131,6 +135,7 @@ if QB and QB.config and QB.config.adopt then
     Config.target.freezeOnMenu = QB.config.boolean(Config.target.freezeOnMenu, { label = 'Hold player still in option menu', advanced = false })
     Config.target.closeMenuOutOfRange = QB.config.boolean(Config.target.closeMenuOutOfRange, { label = 'Close option menu when out of range', advanced = false })
     Config.target.showCloseHint = QB.config.boolean(Config.target.showCloseHint, { label = 'Show option menu close hint', advanced = false })
+    Config.target.sprites.allowPerZoneOverride = QB.config.boolean(Config.target.sprites.allowPerZoneOverride, { label = 'Let zones show icons individually', advanced = false })
     Config.target.toggle = QB.config.boolean(Config.target.toggle, { label = 'Press to toggle targeting', advanced = false })
     Config.target.maxDistance = QB.config.number(Config.target.maxDistance, { label = 'Target search distance (metres)', advanced = false })
     Config.target.legacyMaxDistance = QB.config.number(Config.target.legacyMaxDistance, { label = 'Legacy target distance (metres)', advanced = true })
@@ -175,6 +180,7 @@ if QB and QB.config and QB.config.adopt then
         ['target.freezeOnMenu'] = 'Hold the player still while the multiple-option menu is open. Turn off to allow movement.',
         ['target.closeMenuOutOfRange'] = 'Close the multiple-option menu when its target is no longer within reach.',
         ['target.showCloseHint'] = 'Show a short message explaining how to close the multiple-option menu.',
+        ['target.sprites.allowPerZoneOverride'] = 'Allow a zone that asks for its own icon to show it even when location icons are turned off globally.',
         ['target.sprites.enabled'] = 'Show nearby icons for fixed interaction zones that allow them.',
         ['target.sprites.drawDistance'] = 'Maximum distance at which fixed interaction location icons are drawn.',
         ['target.sprites.offset'] = 'Move location icons away from their zone anchor using world directions.',
