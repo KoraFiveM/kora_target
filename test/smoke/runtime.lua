@@ -127,6 +127,7 @@ local runtime = Target._testRuntime
 local sprites = Target._testSprites
 
 harness.test('multiple target options open qblib interact and dispatch the selected action', function()
+    Config.target.freezeOnMenu = true -- the shipped default is false; the freeze is opt-in
     local selected = false
     runtime.selectCandidates({
         { option = { label = 'First', icon = 'one', onSelect = function() selected = true end } },
@@ -144,6 +145,7 @@ harness.test('multiple target options open qblib interact and dispatch the selec
 end)
 
 harness.test('disabling targeting closes a target selector and restores player movement', function()
+    Config.target.freezeOnMenu = true
     runtime.selectCandidates({
         { option = { label = 'First', onSelect = function() end } },
         { option = { label = 'Second', onSelect = function() end } },
@@ -153,6 +155,7 @@ harness.test('disabling targeting closes a target selector and restores player m
     Target.setEnabled(false)
     harness.assertFalse(frozenEntities[1], 'disabling targeting must not leave the player frozen')
     Target.setEnabled(true)
+    Config.target.freezeOnMenu = false
 end)
 
 harness.test('sprite worker is lazy and requires a sprite-enabled zone', function()
@@ -288,11 +291,12 @@ harness.test('zone candidates are matched against the aim point, not the player 
         'an aim point inside the zone must surface it regardless of where the ped is standing')
 end)
 
-harness.test('freezeOnMenu=false never freezes the ped, and the default does', function()
+harness.test('freezeOnMenu=false (the default) never freezes the ped, and true does', function()
     local candidates = {
         { option = { label = 'A', onSelect = function() end }, registration = {}, anchorCoords = entityCoords },
         { option = { label = 'B', onSelect = function() end }, registration = {}, anchorCoords = entityCoords },
     }
+    harness.assertEqual(Config.target.freezeOnMenu, false, 'the shipped default lets the player move while the menu is open')
     runtime.closeTargetMenu()
     frozenEntities[1] = nil
     Config.target.freezeOnMenu = false
@@ -302,7 +306,7 @@ harness.test('freezeOnMenu=false never freezes the ped, and the default does', f
 
     Config.target.freezeOnMenu = true
     runtime.selectCandidates(candidates)
-    harness.assertTrue(frozenEntities[1], 'default config must keep the freeze')
+    harness.assertTrue(frozenEntities[1], 'freezeOnMenu=true restores the freeze')
     runtime.closeTargetMenu()
     harness.assertTrue(not frozenEntities[1], 'closing the menu always unfreezes')
     harness.assertTrue(helpMessages > 0 and helpCleared > 0, 'close hint is shown and cleared with the menu')

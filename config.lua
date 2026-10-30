@@ -104,7 +104,7 @@ Config.target = {
 
     -- Holding still while the multi-option menu is open stops the snapshot from
     -- going stale. Turn off to let the player keep moving while it is open.
-    freezeOnMenu = true,
+    freezeOnMenu = false,
     closeMenuOutOfRange = true,    -- close the open menu when its target moves or the player walks out of range
     showCloseHint = true,          -- show a short "press to close" help message when the menu opens
 
