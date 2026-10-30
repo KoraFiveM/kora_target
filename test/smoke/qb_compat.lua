@@ -1,7 +1,7 @@
 local scriptDir = debug.getinfo(1, 'S').source:match('@?(.*/)') or './'
 local resourceRoot = scriptDir .. '../../'
-local qblibTestRoot = resourceRoot .. '../kora_lib/test/'
-package.path = qblibTestRoot .. '?.lua;' .. package.path
+local koraLibTestRoot = resourceRoot .. '../kora_lib/test/'
+package.path = koraLibTestRoot .. '?.lua;' .. package.path
 
 local harness = require('harness')
 local exportsByEvent = {}
@@ -405,7 +405,7 @@ harness.test('SpawnPed supports qb-taxijob config and registers its entity targe
         'RemoveSpawnedPed must tear down the ped target registration')
 end)
 
-harness.test('SpawnPed fails cleanly when qblib cannot stream the model', function()
+harness.test('SpawnPed fails cleanly when kora_lib cannot stream the model', function()
     local original = QB.stream.loadModel
     QB.stream.loadModel = function() return false, 'model timeout' end
     local ok, err = pcall(spawnPed, {

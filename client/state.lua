@@ -530,7 +530,7 @@ function Target.destroyRegistration(id)
         Target.byGlobalBone[id] = nil
     elseif registration.kind == "zone" then
         -- The double-layer-ownership fix: QB.zones.box/sphere/poly attribute
-        -- the zone's own qblib-internal cleanup to whichever resource called
+        -- the zone's own kora_lib-internal cleanup to whichever resource called
         -- INTO kora_lib -- which is "qbtarget" itself when a third-party
         -- consumer called exports.kora_target:addBoxZone, not that consumer.
         -- kora_lib's own cleanup-on-stop therefore never fires for the real

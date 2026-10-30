@@ -4,7 +4,7 @@ title: kora_target
 ---
 
 A crosshair/zone-based targeting and interaction engine for FiveM, built on
-[qblib](https://qbcore2.github.io/kora_lib/) (`QB.raycast` for aim resolution,
+[kora_lib](https://qbcore2.github.io/kora_lib/) (`QB.raycast` for aim resolution,
 `QB.zones` for area-based targets, `QB.world`/`QB.drawing` as the underlying
 pool-query/prompt-rendering primitives). It's one resource, no separate proxy
 resources: it declares `provide 'qb-target'` and `provide 'ox_target'` in its
@@ -15,7 +15,7 @@ resource.
 
 ## Requirements
 
-- [qblib](https://qbcore2.github.io/kora_lib/) — shared helper library kora_target is built on (raycasting, zones, world/drawing primitives, NUI, callbacks)
+- [kora_lib](https://qbcore2.github.io/kora_lib/) — shared helper library kora_target is built on (raycasting, zones, world/drawing primitives, NUI, callbacks)
 
 ## Installation
 
@@ -259,7 +259,7 @@ location icons; `demo` (built-in global ped/vehicle demo targets) defaults to
 
 Part of the [qbcore2](https://github.com/qbcore2) resource set:
 
-- [qblib](https://qbcore2.github.io/kora_lib/) — shared helper library
+- [kora_lib](https://qbcore2.github.io/kora_lib/) — shared helper library
 - [qbsql](https://qbcore2.github.io/kora_sql/) — database driver
 - [qbcore](https://qbcore2.github.io/kora_core/) — framework core
 - [qbinventory](https://qbcore2.github.io/kora_inventory/) — headless inventory

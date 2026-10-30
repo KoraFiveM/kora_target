@@ -1,7 +1,7 @@
 local scriptDir = debug.getinfo(1, 'S').source:match('@?(.*/)') or './'
 local resourceRoot = scriptDir .. '../../'
-local qblibTestRoot = resourceRoot .. '../kora_lib/test/'
-package.path = qblibTestRoot .. '?.lua;' .. package.path
+local koraLibTestRoot = resourceRoot .. '../kora_lib/test/'
+package.path = koraLibTestRoot .. '?.lua;' .. package.path
 
 local harness = require('harness')
 local exportsByEvent = {}

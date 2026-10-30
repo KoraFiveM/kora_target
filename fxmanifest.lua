@@ -7,7 +7,7 @@ name 'kora_target'
 provide 'qbtarget'
 author 'Jamie'
 version '1.0.0'
-description 'World/zone/model targeting engine built on qblib'
+description 'World/zone/model targeting engine built on kora_lib'
 
 dependencies {
     'kora_lib'

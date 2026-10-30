@@ -1,7 +1,7 @@
 local scriptDir = debug.getinfo(1, 'S').source:match('@?(.*/)') or './'
 local resourceRoot = scriptDir .. '../../'
-local qblibTestRoot = resourceRoot .. '../kora_lib/test/'
-package.path = qblibTestRoot .. '?.lua;' .. package.path
+local koraLibTestRoot = resourceRoot .. '../kora_lib/test/'
+package.path = koraLibTestRoot .. '?.lua;' .. package.path
 
 local harness = require('harness')
 
@@ -126,7 +126,7 @@ dofile(resourceRoot .. 'client/loop.lua')
 local runtime = Target._testRuntime
 local sprites = Target._testSprites
 
-harness.test('multiple target options open qblib interact and dispatch the selected action', function()
+harness.test('multiple target options open kora_lib interact and dispatch the selected action', function()
     Config.target.freezeOnMenu = true -- the shipped default is false; the freeze is opt-in
     local selected = false
     runtime.selectCandidates({
@@ -197,9 +197,9 @@ harness.test('target registration mutations invalidate the aim cache', function(
     harness.assertTrue(first ~= second, 'registration generation must invalidate a stable aim cache')
 end)
 
-harness.test('a live qblib config update invalidates target resolver caches', function()
+harness.test('a live kora_lib config update invalidates target resolver caches', function()
     local binding = configBindings.kora_target
-    harness.assertTrue(binding ~= nil, 'qbtarget must bind its active config through qblib')
+    harness.assertTrue(binding ~= nil, 'qbtarget must bind its active config through kora_lib')
     harness.assertEqual(binding.path[1], 'target', 'the binding should receive only qbtarget settings')
 
     local revision = Target.registrationRevision
@@ -369,7 +369,7 @@ harness.test('global zone debug and individual sprite visibility are retained on
     })
 
     local registration = Target.registrations[id]
-    harness.assertTrue(zoneCalls[#zoneCalls].debug, 'Config.target.debug must enable qblib zone outlines globally')
+    harness.assertTrue(zoneCalls[#zoneCalls].debug, 'Config.target.debug must enable kora_lib zone outlines globally')
     harness.assertEqual(registration.spriteCoords.x, 12, 'a zone sprite should retain its world anchor')
     harness.assertTrue(registration.drawSprite == false, 'a zone must be able to opt out of configured sprites')
     harness.assertTrue(not sprites.canDraw(registration, { x = 12, y = 3, z = 4 }, Config.target.sprites),

@@ -3,7 +3,7 @@
 A crosshair/zone-based targeting engine built on `kora_lib` (`QB.raycast` for aim resolution, `QB.zones` for area-based targets, `QB.world`/`QB.drawing` as the underlying pool-query/prompt-rendering primitives, `QB.nui` for display-only HUD/picker messages, `QB.callback` for the optional server-action relay). One resource, no separate proxy resources: it declares `provide 'qb-target'` and `provide 'ox_target'` in its `fxmanifest.lua` and registers the real, public qb-target/ox_target export names directly (`client/compat/qb-target.lua`, `client/compat/ox-target.lua`), so scripts written against `exports['qb-target']:...` or `exports.ox_target:...` keep working unmodified against this same running resource — see those two files for the exact mapping onto kora_target's own API, and `AGENTS.md`'s "Compatibility mechanism" section for how `provide` + manual export registration actually makes that resolve.
 
 `PolyZone` is not required by kora_target or the native kora_lib stack. The
-qb-target compatibility exports return qblib-backed, zone-compatible objects
+qb-target compatibility exports return kora_lib-backed, zone-compatible objects
 without it. Start the optional `PolyZone` wrapper only for a third-party
 resource whose manifest imports `@PolyZone/...`; when present, its classes can
 still be passed to `AddComboZone`.
