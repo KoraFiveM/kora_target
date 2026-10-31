@@ -74,6 +74,12 @@ end
 
 CreateThread(refreshPlayerData)
 
+-- Read-only accessor for client/compat/ox-target.lua's `groups` check, which
+-- shares this file's kora_core PlayerData tracking instead of duplicating it.
+function Target._playerData()
+    return coreAvailable, PlayerData
+end
+
 RegisterNetEvent('QBCore:Client:OnPlayerLoaded', refreshPlayerData)
 RegisterNetEvent('QBCore:Client:OnPlayerUnload', function() PlayerData = nil end)
 -- Real qb-target itself listens for this exact event the same way to keep its

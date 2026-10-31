@@ -5,11 +5,10 @@
 -- "qbtarget", not "ox_target" -- see provideExport below.
 --
 -- See ../../AGENTS.md for the full function-by-function mapping table and
--- the explicitly flagged public-knowledge assumptions (removeLocalEntity/
--- removeModel's optional `names` argument, canInteract arity -- kora_target's
--- own canInteract only forwards (entity, distance, data), so a ported
--- script's canInteract does NOT receive ox_target's real (entity, distance,
--- coords, name, bone) -- and getState()'s exact return shape).
+-- the explicitly flagged public-knowledge assumptions (getState()'s exact
+-- return shape, isActive). canInteract receives ox_target's
+-- (entity, distance, coords, name, bone) -- bone is always nil -- and
+-- `groups` is enforced against kora_core job/gang data (see makeCanInteract).
 
 Target = Target or {}
 
@@ -58,45 +57,105 @@ local function dispatchLegacy(option, entity, context)
     end
 end
 
+-- `groups` enforcement (ox_target form: 'name' | {'a','b'} | {a = minGrade}),
+-- checked against the same kora_core PlayerData the qb-target bridge tracks
+-- (job and gang). Set convar `kora_target:oxGroups 0` to restore the previous
+-- behaviour of passing `groups` through unenforced. If no kora_core identity is
+-- running the check never denies (graceful degradation, warned at registration).
+local function groupsEnforced()
+    return type(GetConvarInt) ~= 'function' or GetConvarInt('kora_target:oxGroups', 1) ~= 0
+end
+
+local function groupGrade(entry, name)
+    return entry and entry.name == name and entry.grade and (entry.grade.level or entry.grade) or nil
+end
+
+local function hasGroup(groups)
+    if not Target._playerData then return true end
+    local available, data = Target._playerData()
+    if not available then return true end
+    if not data then return false end
+
+    local function satisfied(name, minGrade)
+        local grade = groupGrade(data.job, name) or groupGrade(data.gang, name)
+        return grade ~= nil and grade >= (tonumber(minGrade) or 0)
+    end
+
+    if type(groups) == 'string' then return satisfied(groups, 0) end
+    if type(groups) ~= 'table' then return true end
+    for key, value in pairs(groups) do
+        if type(key) == 'number' then
+            if satisfied(value, 0) then return true end
+        elseif satisfied(key, value) then
+            return true
+        end
+    end
+    return next(groups) == nil
+end
+
+-- ox_target accepts either an array of options or one bare option table.
+local function optionList(options)
+    assert(type(options) == 'table', 'ox_target options must be a table.')
+    if options[1] == nil and next(options) ~= nil then return { options } end
+    return options
+end
+
 -- Translates ox_target's option shape ({name?, icon, label, distance?,
 -- bones?, canInteract?, onSelect?, action?, event?, serverEvent?, groups?,
 -- items?}) into kora_target's own QBTargetOption shape. `distance`/`bones` map
 -- 1:1 -- ox_target already stores these per-option, unlike qb-target.
--- `groups`/`items` are passed through UNENFORCED -- see ../../docs.md's
--- "Opaque fields" section: no ox_core/qb-core exists in this repo to check a
--- player's group/inventory against.
+-- `items` is passed through UNENFORCED; `groups` is enforced via makeCanInteract.
+-- `offset`/`offsetAbsolute`/`offsetSize` (model/entity aim offsets) are not
+-- supported and are ignored.
+local function makeCanInteract(option)
+    local userCheck, groups = option.canInteract, option.groups
+    local enforce = groups ~= nil and groupsEnforced()
+    if not userCheck and not enforce then return nil end
+
+    if enforce then
+        local available = Target._playerData and (Target._playerData())
+        if not available then
+            print(('[ox_target-bridge] WARNING: option %q sets groups but no kora_core identity is running '
+                .. '-- groups cannot be checked and the option will be shown to everyone.')
+                :format(tostring(option.label)))
+        end
+    end
+
+    -- kora_target calls canInteract(entity, distance, data, anchorCoords); ox_target's
+    -- contract is (entity, distance, coords, name, bone). Zones pass entity 0 in ox_target.
+    -- `bone` is not tracked by the resolver and is always nil.
+    return function(entity, distance, _, anchorCoords)
+        if enforce and not hasGroup(groups) then return false end
+        if userCheck then
+            local coords = anchorCoords and vector3(anchorCoords.x, anchorCoords.y, anchorCoords.z) or nil
+            return userCheck(entity or 0, distance, coords, option.name, nil)
+        end
+        return true
+    end
+end
+
 local function translateOxOptions(options)
-    assert(type(options) == 'table', 'ox_target options must be a table.')
+    options = optionList(options)
 
     local translated = {}
 
     for i, option in ipairs(options) do
-        -- Loud, once-per-option warning at REGISTRATION time (not per
-        -- interaction/frame) for the exact gap the comment above describes:
-        -- groups/items filter fields with no canInteract of the caller's
-        -- own means this option shows to EVERYONE, silently.
-        if (option.groups or option.items) and not option.canInteract then
-            print(('[ox_target-bridge] WARNING: option %q sets groups/items but this compat shim does '
-                .. 'NOT enforce those filters (no ox_core/qb-core in this repo to check against) -- the '
-                .. 'option will be shown to EVERYONE unless you supply your own canInteract.')
-                :format(tostring(option.label)))
+        if option.items then
+            print(('[ox_target-bridge] WARNING: option %q sets items but this compat shim does NOT '
+                .. 'enforce item filters -- supply your own canInteract.'):format(tostring(option.label)))
         end
+
+        local bones = option.bones
+        if type(bones) == 'string' then bones = { bones } end
 
         translated[i] = {
             name = option.name,
-            label = option.label,
+            label = option.label or option.name or 'Interact',
             icon = option.icon,
+            iconColor = option.iconColor,
             distance = option.distance,
-            bones = option.bones,
-            -- Passed through as-is, NOT re-wrapped to real ox_target's own
-            -- contract: kora_target's resolver always calls this with
-            -- (entity, distance, data), but real ox_target calls
-            -- canInteract(entity, distance, coords, name, bone) -- five
-            -- arguments. A ported canInteract reading coords/name/bone off
-            -- its 3rd-5th parameters sees kora_target's shape instead. See this
-            -- file's header and ../../AGENTS.md for why this divergence is
-            -- intentionally NOT fixed here.
-            canInteract = option.canInteract,
+            bones = bones,
+            canInteract = makeCanInteract(option),
             groups = option.groups,
             items = option.items,
             onSelect = function(entity)
@@ -105,6 +164,7 @@ local function translateOxOptions(options)
             _onSelectContext = function(context)
                 dispatchLegacy(option, context.entity, context)
             end,
+            _oxCompat = true,
         }
     end
 
@@ -119,17 +179,21 @@ local function addModel(models, options)
     return Target.addModel(models, translateOxOptions(options))
 end
 
+local zonesByName = {}
+
 local function addBoxZone(zoneOpts)
     assert(type(zoneOpts) == 'table', 'addBoxZone requires an options table.')
 
-    return Target.addBoxZone({
+    local id = Target.addBoxZone({
         coords = zoneOpts.coords,
-        size = zoneOpts.size,
-        rotation = zoneOpts.rotation,
+        size = zoneOpts.size or vector3(2.0, 2.0, 2.0),
+        rotation = zoneOpts.rotation or 0.0,
         debug = zoneOpts.debug,
         drawSprite = zoneOpts.drawSprite,
         options = translateOxOptions(zoneOpts.options),
     })
+    if zoneOpts.name then zonesByName[zoneOpts.name] = id end
+    return id
 end
 
 local function addSphereZone(zoneOpts)
@@ -172,53 +236,12 @@ local addGlobalObject = addGlobal('object')
 -- ox_target zones are already id-based, same as kora_target's own -- the
 -- cleanest mapping in the suite, no translation table needed.
 local function removeZone(id)
-    return Target.removeZone(id)
-end
-
--- ox_target's exact semantics for the optional `names` (specific option
--- names to remove) argument aren't confidently known from public knowledge
--- alone (see AGENTS.md's assumptions list). Rather than guess and risk
--- silently removing the wrong option, this only supports the unambiguous
--- case (no `names` -- remove everything) and loudly refuses the rest.
-local function removeLocalEntity(entities, names)
-    if names then
-        print(('[ox_target-bridge] removeLocalEntity(entities, names) with specific option names is not '
-            .. 'supported -- call removeLocalEntity(entities) to remove everything on them. (names=%s)')
-            :format(tostring(names)))
-        return false
+    if type(id) == 'string' then
+        local named = zonesByName[id]
+        zonesByName[id] = nil
+        id = named
     end
-
-    local removedAny = false
-    for _, entity in ipairs(type(entities) == 'table' and entities or { entities }) do
-        if Target.removeEntity(entity) then removedAny = true end
-    end
-
-    return removedAny
-end
-
-local function removeModel(models, names)
-    if names then
-        print(('[ox_target-bridge] removeModel(models, names) with specific option names is not supported '
-            .. '-- call removeModel(models) to remove everything on them. (names=%s)'):format(tostring(names)))
-        return false
-    end
-
-    return Target.removeModel(models)
-end
-
--- Note the INVERTED boolean sense: ox_target's disableTargeting(true) turns
--- targeting OFF. A naive passthrough to setEnabled would silently invert
--- behavior.
-local function disableTargeting(state)
-    return Target.setEnabled(not state)
-end
-
--- Best-effort: ox_target's exact getState() return shape isn't confidently
--- known from public knowledge alone (see AGENTS.md's assumptions list).
--- Returns kora_target's own getState() shape as-is rather than guessing at a
--- reshape that could be wrong in a different way.
-local function getState()
-    return Target.getState()
+    return id ~= nil and Target.removeZone(id) or false
 end
 
 local function optionNames(names)
@@ -243,6 +266,63 @@ local function removeNamedOptions(id, wanted)
         Target._replaceOptions(id, remaining, registration.distance)
     end
     return true
+end
+
+-- Removes the named options from bridge-created registrations indexed under
+-- `key` in `index` (Target.byEntity / Target.byModel). Native and qb-target
+-- registrations on the same key are left alone.
+local function removeNamedFromIndex(index, key, wanted)
+    local ids = {}
+    for id in pairs(index[key] or {}) do ids[#ids + 1] = id end
+    local removed = false
+    for _, id in ipairs(ids) do
+        local registration = Target.registrations[id]
+        local first = registration and registration.options[1]
+        if first and first._oxCompat and removeNamedOptions(id, wanted) then removed = true end
+    end
+    return removed
+end
+
+-- removeLocalEntity(entities, names?): without `names` every registration on the
+-- entities goes; with a name or array of names only those options do.
+local function removeLocalEntity(entities, names)
+    local wanted = names ~= nil and optionNames(names) or nil
+    local removedAny = false
+    for _, entity in ipairs(type(entities) == 'table' and entities or { entities }) do
+        if wanted then
+            if removeNamedFromIndex(Target.byEntity, entity, wanted) then removedAny = true end
+        elseif Target.removeEntity(entity) then
+            removedAny = true
+        end
+    end
+
+    return removedAny
+end
+
+local function removeModel(models, names)
+    if names == nil then return Target.removeModel(models) end
+
+    local wanted, removedAny = optionNames(names), false
+    for _, model in ipairs(type(models) == 'table' and models or { models }) do
+        local hash = type(model) == 'string' and joaat(model) or model
+        if removeNamedFromIndex(Target.byModel, hash, wanted) then removedAny = true end
+    end
+    return removedAny
+end
+
+-- Note the INVERTED boolean sense: ox_target's disableTargeting(true) turns
+-- targeting OFF. A naive passthrough to setEnabled would silently invert
+-- behavior.
+local function disableTargeting(state)
+    return Target.setEnabled(not state)
+end
+
+-- Best-effort: ox_target's exact getState() return shape isn't confidently
+-- known from public knowledge alone (see AGENTS.md's assumptions list).
+-- Returns kora_target's own getState() shape as-is rather than guessing at a
+-- reshape that could be wrong in a different way.
+local function getState()
+    return Target.getState()
 end
 
 local function removeGlobal(entityType)

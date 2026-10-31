@@ -336,7 +336,7 @@ local function zoneRegistrationsAt(point, pedCoords, aimedEntity)
     return registrations
 end
 
-local function optionAllowed(registration, optionIndex, option, entity, distance, now)
+local function optionAllowed(registration, optionIndex, option, entity, distance, now, anchorCoords)
     if not option.canInteract then return true end
 
     -- Successful checks remain uncached by default because third-party
@@ -357,7 +357,7 @@ local function optionAllowed(registration, optionIndex, option, entity, distance
     end
 
     if Config.target.diagnostics then diagnostics.canInteract = diagnostics.canInteract + 1 end
-    local ok, result = pcall(option.canInteract, entity, distance, option.data)
+    local ok, result = pcall(option.canInteract, entity, distance, option.data, anchorCoords)
     local allowed = ok and result ~= false
     if not ok then print(("[qbtarget] canInteract for option '%s' errored: %s"):format(option.label, tostring(result))) end
 
@@ -390,7 +390,7 @@ local function appendCandidates(candidates, nearestIndex, registration, entity, 
             -- canInteract receives distance for compatibility; pay the sqrt only
             -- after all cheap rejections have passed.
             distance = distance or math.sqrt(distSq)
-            if optionAllowed(registration, index, option, entity, distance, now) then
+            if optionAllowed(registration, index, option, entity, distance, now, anchorCoords) then
                 local candidateIndex = #candidates + 1
                 local candidate = candidatePool[candidateIndex]
                 if not candidate then

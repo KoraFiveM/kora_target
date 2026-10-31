@@ -407,4 +407,158 @@ harness.test('named removals skip retired owned registrations and preserve nil/f
     clearRegistrations()
 end)
 
+
+-- ox_inventory 2.48.1-shaped payloads for the seven exports it uses.
+local addModel, removeModel = getExport('addModel'), getExport('removeModel')
+local addGlobalVehicle, removeLocalEntity = getExport('addGlobalVehicle'), getExport('removeLocalEntity')
+local addBoxZone, removeZone = getExport('addBoxZone'), getExport('removeZone')
+
+local function hashOf(name) return name end
+
+harness.test('ox_inventory addModel with a single option table; removeModel(model, name) removes only that option', function()
+    clearRegistrations()
+    local id = addModel({ 'prop_dumpster_01a', 'prop_dumpster_02a' }, {
+        icon = 'fas fa-dumpster', label = 'Search', onSelect = function() end, distance = 2,
+    })
+    harness.assertTrue(Target.registrations[id] ~= nil, 'a bare option table registers')
+    harness.assertEqual(Target.registrations[id].options[1].distance, 2)
+    harness.assertEqual(Target.registrations[id].options[1].icon, 'fas fa-dumpster')
+
+    -- shop pattern: removeModel(model, shop.name) then addModel(model, { { name = ... } })
+    local shop = addModel('s_m_y_shop_01', { { name = 'Shop A', label = 'Shop A', onSelect = function() end },
+        { name = 'Shop B', label = 'Shop B', onSelect = function() end } })
+    harness.assertFalse(removeModel('s_m_y_shop_01', 'nope'))
+    harness.assertTrue(removeModel('s_m_y_shop_01', 'Shop A'))
+    harness.assertEqual(#Target.registrations[shop].options, 1)
+    harness.assertEqual(Target.registrations[shop].options[1].name, 'Shop B')
+    harness.assertTrue(removeModel('s_m_y_shop_01', { 'Shop B' }))
+    harness.assertEqual(Target.registrations[shop], nil, 'last named option removes the registration')
+    harness.assertTrue(Target.registrations[id] ~= nil, 'unrelated models untouched')
+    harness.assertTrue(removeModel({ 'prop_dumpster_01a', 'prop_dumpster_02a' }), 'no names removes everything')
+    harness.assertEqual(Target.registrations[id], nil)
+    clearRegistrations()
+end)
+
+harness.test('removeModel(model, names) leaves native registrations on the same model alone', function()
+    clearRegistrations()
+    local native = Target.addModel('prop_x', { { name = 'same', label = 'Native', onSelect = function() end } })
+    addModel('prop_x', { { name = 'same', label = 'Ox', onSelect = function() end } })
+    harness.assertTrue(removeModel('prop_x', 'same'))
+    harness.assertTrue(Target.registrations[native] ~= nil)
+    clearRegistrations()
+end)
+
+harness.test('ox_inventory addLocalEntity (shop ped) and removeLocalEntity(entity) / by name', function()
+    clearRegistrations()
+    addLocalEntity(90, { { icon = 'fas fa-shopping-basket', label = 'Open', groups = nil, iconColor = 'red',
+        onSelect = function() end, distance = 2.0 } })
+    harness.assertTrue(Target.byEntity[90] ~= nil)
+    harness.assertEqual(Target.registrations[next(Target.byEntity[90])].options[1].iconColor, 'red')
+    harness.assertTrue(removeLocalEntity(90))
+    harness.assertTrue(Target.byEntity[90] == nil)
+    harness.assertFalse(removeLocalEntity(90))
+
+    addLocalEntity(91, { { name = 'a', label = 'A', onSelect = function() end }, { name = 'b', label = 'B', onSelect = function() end } })
+    harness.assertTrue(removeLocalEntity(91, 'a'))
+    harness.assertTrue(removeLocalEntity(91, { 'b' }))
+    harness.assertTrue(Target.byEntity[91] == nil)
+    clearRegistrations()
+end)
+
+harness.test('addGlobalVehicle: canInteract receives (entity, distance, coords, name, bone); returns id', function()
+    clearRegistrations()
+    local args
+    local id = addGlobalVehicle({ {
+        name = 'trunk', icon = 'fas fa-truck-ramp-box', label = 'Open storage', distance = 1.5,
+        canInteract = function(...) args = table.pack(...); return true end,
+        onSelect = function() end,
+    } })
+    harness.assertEqual(type(id), 'number')
+    local candidates = Target._testRuntime.resolveCandidates(true, 12, vector3(1, 0, 0), 1, vector3(0, 0, 0))
+    harness.assertEqual(#candidates, 0, 'vehicle global only matches vehicles (stub entity type is object)')
+    local option = Target.registrations[id].options[1]
+    harness.assertTrue(option.canInteract(12, 1.0, nil, { x = 1, y = 2, z = 3 }))
+    harness.assertEqual(args.n, 5)
+    harness.assertEqual(args[1], 12)
+    harness.assertEqual(args[2], 1.0)
+    harness.assertEqual(args[3].x, 1)
+    harness.assertEqual(args[4], 'trunk')
+    harness.assertEqual(args[5], nil)
+    harness.assertTrue(removeGlobalVehicle(id) )
+    clearRegistrations()
+end)
+
+local function withPlayer(job, gang, fn)
+    local previous = Target._playerData
+    Target._playerData = function() return true, { job = job, gang = gang } end
+    fn()
+    Target._playerData = previous
+end
+
+harness.test('groups: string, array and map forms are enforced against job/gang; canInteract ANDs', function()
+    clearRegistrations()
+    local police = { name = 'police', grade = { level = 2 } }
+    local function allowed(groups, job, gang, userCheck)
+        local ok
+        withPlayer(job, gang or { name = 'none', grade = { level = 0 } }, function()
+            local id = addGlobalVehicle({ { label = 'G', groups = groups, canInteract = userCheck, onSelect = function() end } })
+            ok = Target.registrations[id].options[1].canInteract(1, 1.0)
+            Target.destroyRegistration(id)
+        end)
+        return ok
+    end
+    harness.assertTrue(allowed('police', police))
+    harness.assertFalse(allowed('ambulance', police))
+    harness.assertTrue(allowed({ 'ambulance', 'police' }, police))
+    harness.assertFalse(allowed({ 'ambulance', 'fire' }, police))
+    harness.assertTrue(allowed({ police = 2 }, police))
+    harness.assertFalse(allowed({ police = 3 }, police))
+    harness.assertTrue(allowed({ ballas = 1 }, police, { name = 'ballas', grade = { level = 1 } }))
+    harness.assertFalse(allowed('police', police, nil, function() return false end), 'own canInteract still applies')
+
+    local noPlayer
+    local previous = Target._playerData
+    Target._playerData = function() return true, nil end
+    local id = addGlobalVehicle({ { label = 'G', groups = 'police', onSelect = function() end } })
+    noPlayer = Target.registrations[id].options[1].canInteract(1, 1.0)
+    Target._playerData = previous
+    harness.assertFalse(noPlayer, 'loaded identity layer but no player data denies')
+    Target.destroyRegistration(id)
+
+    -- no identity resource at all: never denies
+    id = addGlobalVehicle({ { label = 'G', groups = 'police', onSelect = function() end } })
+    harness.assertTrue(Target.registrations[id].options[1].canInteract(1, 1.0))
+    clearRegistrations()
+end)
+
+harness.test('ox_inventory addBoxZone: returns an id removeZone accepts (crafting + evidence/stash shapes)', function()
+    clearRegistrations()
+    local crafted = addBoxZone({
+        name = 'craftingbench_1:1', id = 1, index = 1,
+        coords = vector3(10, 20, 30), size = vector3(1.5, 1.5, 2.0), rotation = 45, debug = false, drawSprite = false,
+        options = { { label = 'Crafting', icon = 'fas fa-wrench', distance = 2.0,
+            canInteract = function() return true end, onSelect = function() end } },
+    })
+    harness.assertEqual(type(crafted), 'number')
+    harness.assertEqual(Target.registrations[crafted].kind, 'zone')
+
+    -- Utils.CreateBoxZone: legacy data converted to coords/size/rotation, options attached after
+    local stash = addBoxZone({ coords = vector3(1, 2, 3), size = vector3(2, 2, 2), rotation = 0.0,
+        options = { { icon = 'fas fa-warehouse', label = 'Stash', groups = { police = 0 }, iconColor = 'blue',
+            onSelect = function() end, distance = 2.0 } } })
+    harness.assertTrue(removeZone(stash))
+    harness.assertEqual(Target.registrations[stash], nil)
+    harness.assertFalse(removeZone(stash), 'second removal is a no-op')
+    harness.assertFalse(removeZone(nil))
+    harness.assertFalse(removeZone(99999))
+
+    harness.assertTrue(removeZone('craftingbench_1:1'), 'zones are also removable by their name')
+    harness.assertEqual(Target.registrations[crafted], nil)
+
+    local defaults = addBoxZone({ coords = vector3(0, 0, 0), options = { { label = 'x', onSelect = function() end } } })
+    harness.assertTrue(Target.registrations[defaults] ~= nil, 'size and rotation default like ox_target')
+    harness.assertTrue(removeZone(defaults))
+    clearRegistrations()
+end)
+
 harness.report('qbtarget ox_target compatibility')
