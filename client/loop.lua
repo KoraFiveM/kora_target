@@ -156,7 +156,7 @@ end
 
 local function closeTargetMenu()
     local wasOpen = menuOpen
-    if menuOpen then QB.interact.close() end
+    if menuOpen then Kora.interact.close() end
     menuOpen = false
     if wasOpen then startPauseSuppression() end
     if menuHintShown then ClearAllHelpMessages() end
@@ -289,7 +289,7 @@ end
 
 -- Zone candidates are matched against where the player is AIMING (the
 -- raycast collision point), not where the player's own ped is standing --
--- deliberately not QB.zones.getInside(), which answers "is the ped inside
+-- deliberately not Kora.zones.getInside(), which answers "is the ped inside
 -- this zone" and would require walking into a zone to target it.
 --
 -- This used to be a plain linear scan over every zone-kind registration,
@@ -472,16 +472,16 @@ end
 local function raycastTarget(snapshot, now)
     snapshot = snapshot or aimSnapshot()
     now = now or GetGameTimer()
-    local broadProbe = QB.raycast.start(snapshot.cam, snapshot.destination, 511, snapshot.ped)
-    local hit, hitCoords, entity = QB.raycast.await(broadProbe)
+    local broadProbe = Kora.raycast.start(snapshot.cam, snapshot.destination, 511, snapshot.ped)
+    local hit, hitCoords, entity = Kora.raycast.await(broadProbe)
     if entity and entity ~= 0 then return hit, hitCoords, entity end
 
     local interval = Config.target.entityProbeInterval or 0
     if interval > 0 and now - lastEntityProbeAt < interval then return hit, hitCoords, entity end
     lastEntityProbeAt = now
-    local entityProbe = QB.raycast.start(snapshot.cam, snapshot.destination, 26, snapshot.ped)
+    local entityProbe = Kora.raycast.start(snapshot.cam, snapshot.destination, 26, snapshot.ped)
 
-    local entityHit, entityCoords, entityHandle = QB.raycast.await(entityProbe)
+    local entityHit, entityCoords, entityHandle = Kora.raycast.await(entityProbe)
     if not (entityHit and entityHandle and entityHandle ~= 0) then return hit, hitCoords, entity end
     if not hit or not hitCoords then return entityHit, entityCoords, entityHandle end
 
@@ -513,7 +513,7 @@ syncTargetHud = function(active, candidates)
     if not active then
         if not hudActive then return end
         hudActive, hudRegistrationId, hudEntity, hudOption, hudOptionCount = false, nil, nil, nil, 0
-        QB.nui.send('qbtarget:target', { active = false })
+        Kora.nui.send('qbtarget:target', { active = false })
         return
     end
 
@@ -531,7 +531,7 @@ syncTargetHud = function(active, candidates)
     hudActive, hudRegistrationId, hudEntity = true, registrationId, entity
     hudOption, hudOptionCount = option, optionCount
 
-    QB.nui.send('qbtarget:target', {
+    Kora.nui.send('qbtarget:target', {
         active = true,
         label = top and (optionCount == 1 and option.label or ('%d options'):format(optionCount)) or nil,
         optionCount = optionCount,
@@ -632,7 +632,7 @@ local function selectCandidates(candidates)
         }
     end
 
-    menuOpen = QB.interact.open(items)
+    menuOpen = Kora.interact.open(items)
     if not menuOpen then return end
     local movementMode = menuMovementMode()
     if movementMode == 'freeze' then setMenuPositionFrozen(true) end
@@ -649,7 +649,7 @@ local function selectCandidates(candidates)
     CreateThread(function()
         local nextRangeCheck = 0
         local inputState = { moving = movementMode == 'close' and menuMovementPressed() }
-        while QB.interact.isActive() do
+        while Kora.interact.isActive() do
             if menuInputFrame(movementMode, inputState) then break end
             if Config.target.closeMenuOutOfRange then
                 local now = GetGameTimer()
@@ -718,7 +718,7 @@ local function startTargeting()
     end)
 end
 
-QB.keybind.add({
+Kora.keybind.add({
     name = Config.target.keybind.command,
     description = Config.target.keybind.label,
     defaultMapper = 'keyboard',
@@ -765,7 +765,7 @@ QB.keybind.add({
 -- Config.target.debug/zoneDebugEnabled (client/state.lua) only ever get read
 -- once, at zone registration time -- flipping the config afterward does
 -- nothing to zones already created. This command is a runtime override layered
--- on top via kora_lib's own QB.zones.setDebug(nil, ...) (added specifically for
+-- on top via kora_lib's own Kora.zones.setDebug(nil, ...) (added specifically for
 -- this), not a replacement for the config default: it lets a developer outline
 -- every already-registered target zone live, without editing config.lua and
 -- restarting the resource. `[on|off]`, or no argument to toggle.
@@ -785,7 +785,7 @@ RegisterCommand('qbtarget_debug', function(_, args)
     end
 
     Target.debugEnabled = enabled
-    QB.zones.setDebug(nil, enabled)
+    Kora.zones.setDebug(nil, enabled)
     print(("[qbtarget] target zone debug drawing %s."):format(enabled and 'enabled' or 'disabled'))
 end, false)
 

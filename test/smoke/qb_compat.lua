@@ -17,14 +17,14 @@ local function makeZoneHandle(opts)
     return { remove = function() end, contains = function() return false end }
 end
 
-_G.QB = {
+_G.Kora = {
     resources = {},
     util = { isCallable = function(value)
         if type(value) == 'function' then return true end
         local mt = type(value) == 'table' and getmetatable(value) or nil
         return mt ~= nil and mt.__call ~= nil
     end },
-    compat = { isCallable = function(value) return QB.util.isCallable(value) end, provideExport = function(identity, name, fn)
+    compat = { isCallable = function(value) return Kora.util.isCallable(value) end, provideExport = function(identity, name, fn)
         AddEventHandler(('__cfx_export_%s_%s'):format(identity, name), function(setCB) setCB(fn) end)
     end },
     zones = {
@@ -111,7 +111,7 @@ _G.SetCanPedEquipWeapon = function() end
 _G.GiveWeaponToPed = function() end
 _G.SetPedCurrentWeaponVisible = function() end
 
-QB.stream = {
+Kora.stream = {
     loadModel = function(model, callback)
         RequestModel(model)
         if not HasModelLoaded(model) then return false, 'model timeout' end
@@ -406,14 +406,14 @@ harness.test('SpawnPed supports qb-taxijob config and registers its entity targe
 end)
 
 harness.test('SpawnPed fails cleanly when kora_lib cannot stream the model', function()
-    local original = QB.stream.loadModel
-    QB.stream.loadModel = function() return false, 'model timeout' end
+    local original = Kora.stream.loadModel
+    Kora.stream.loadModel = function() return false, 'model timeout' end
     local ok, err = pcall(spawnPed, {
         model = 'missing_model',
         coords = { x = 0, y = 0, z = 0 },
         spawnNow = true,
     })
-    QB.stream.loadModel = original
+    Kora.stream.loadModel = original
 
     harness.assertFalse(ok, 'an unavailable model must reject instead of waiting forever')
     harness.assertTrue(tostring(err):find('model timeout', 1, true) ~= nil,

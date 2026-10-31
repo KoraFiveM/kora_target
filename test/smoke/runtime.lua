@@ -26,18 +26,18 @@ end
 
 -- Records calls rather than doing anything real (like makeZoneHandle above) --
 -- the qbtarget_debug command test only needs to prove client/loop.lua calls
--- through to QB.zones.setDebug with the right (id, enabled) pair, not kora_lib's
+-- through to Kora.zones.setDebug with the right (id, enabled) pair, not kora_lib's
 -- own runtime toggle behaviour (covered separately in kora_lib's own test suite).
 local setDebugCalls = {}
 
-_G.QB = {
+_G.Kora = {
     resources = {},
     util = { isCallable = function(value)
         if type(value) == 'function' then return true end
         local mt = type(value) == 'table' and getmetatable(value) or nil
         return mt ~= nil and mt.__call ~= nil
     end },
-    compat = { isCallable = function(value) return QB.util.isCallable(value) end },
+    compat = { isCallable = function(value) return Kora.util.isCallable(value) end },
     zones = {
         box = makeZoneHandle,
         sphere = makeZoneHandle,
@@ -514,11 +514,11 @@ harness.test('a faulting GetEntityModel handle is remembered and not re-invoked 
     _G.GetEntityModel = originalModel
 end)
 
-harness.test('qbtarget_debug command toggles every target zone through QB.zones.setDebug(nil, ...)', function()
+harness.test('qbtarget_debug command toggles every target zone through Kora.zones.setDebug(nil, ...)', function()
     -- client/loop.lua's own module chunk (loaded via dofile below, alongside
     -- state.lua) registers this -- Config.target.debug/zoneDebugEnabled stay
     -- the creation-time default; this command is the runtime override layered
-    -- on top of kora_lib's QB.zones.setDebug, so it must reach QB.zones.setDebug
+    -- on top of kora_lib's Kora.zones.setDebug, so it must reach Kora.zones.setDebug
     -- with (nil, enabled) rather than touching any single zone's own handle.
     local handler = commands['qbtarget_debug']
     harness.assertTrue(handler ~= nil, 'client/loop.lua must register a qbtarget_debug command')

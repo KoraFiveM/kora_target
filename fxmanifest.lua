@@ -25,9 +25,9 @@ dependencies {
 provide 'qb-target'
 provide 'ox_target'
 
--- Required to reach QB.raycast/QB.zones/QB.world/QB.drawing/QB.nui/QB.cache/
--- QB.callback/QB.resources -- see kora_lib's own AGENTS.md for why this is how a
--- consumer resource pulls in the QB proxy (init.lua).
+-- Required to reach Kora.raycast/Kora.zones/Kora.world/Kora.drawing/Kora.nui/Kora.cache/
+-- Kora.callback/Kora.resources -- see kora_lib's own AGENTS.md for why this is how a
+-- consumer resource pulls in the Kora proxy (init.lua).
 shared_script '@kora_lib/init.lua'
 
 shared_scripts {

@@ -1,6 +1,6 @@
 # kora_target
 
-A crosshair/zone-based targeting engine built on `kora_lib` (`QB.raycast` for aim resolution, `QB.zones` for area-based targets, `QB.world`/`QB.drawing` as the underlying pool-query/prompt-rendering primitives, `QB.nui` for display-only HUD/picker messages, `QB.callback` for the optional server-action relay). One resource, no separate proxy resources: it declares `provide 'qb-target'` and `provide 'ox_target'` in its `fxmanifest.lua` and registers the real, public qb-target/ox_target export names directly (`client/compat/qb-target.lua`, `client/compat/ox-target.lua`), so scripts written against `exports['qb-target']:...` or `exports.ox_target:...` keep working unmodified against this same running resource — see those two files for the exact mapping onto kora_target's own API, and `AGENTS.md`'s "Compatibility mechanism" section for how `provide` + manual export registration actually makes that resolve.
+A crosshair/zone-based targeting engine built on `kora_lib` (`Kora.raycast` for aim resolution, `Kora.zones` for area-based targets, `Kora.world`/`Kora.drawing` as the underlying pool-query/prompt-rendering primitives, `Kora.nui` for display-only HUD/picker messages, `Kora.callback` for the optional server-action relay). One resource, no separate proxy resources: it declares `provide 'qb-target'` and `provide 'ox_target'` in its `fxmanifest.lua` and registers the real, public qb-target/ox_target export names directly (`client/compat/qb-target.lua`, `client/compat/ox-target.lua`), so scripts written against `exports['qb-target']:...` or `exports.ox_target:...` keep working unmodified against this same running resource — see those two files for the exact mapping onto kora_target's own API, and `AGENTS.md`'s "Compatibility mechanism" section for how `provide` + manual export registration actually makes that resolve.
 
 `PolyZone` is not required by kora_target or the native kora_lib stack. The
 qb-target compatibility exports return kora_lib-backed, zone-compatible objects
@@ -94,7 +94,7 @@ Sugar over `addEntity`: registers `options` on `entity`, forcing every option on
 ### `addBoxZone({coords, size, rotation?, options, distance?, debug?, drawSprite?})`
 ### `addSphereZone({coords, radius, options, distance?, debug?, drawSprite?})`
 ### `addPolyZone({points, thickness?, minZ?, maxZ?, options, distance?, debug?, drawSprite?})`
-Zone-based targets, backed by `QB.zones.box/sphere/poly` — interact by aiming
+Zone-based targets, backed by `Kora.zones.box/sphere/poly` — interact by aiming
 at a point inside the zone; standing inside it is not required. Returns the
 registration `id`.
 
@@ -139,7 +139,7 @@ An option registered through **this native API** may also carry `item`, `job`, `
 If you're porting a real `qb-target` script instead of writing against this native API directly, this doesn't apply to you: the **qb-target compat shim** (`exports['qb-target']:...`, see AGENTS.md's "Job/gang/item enforcement") enforces `job`/`excludejob`/`jobType`/`excludejobType`/`gang`/`excludegang`/`item`/`citizenid` against kora_core. The ox_target compat does not interpret ox_core groups.
 
 ## Server actions
-Neither real `qb-target` nor real `ox_target` validate actions server-side themselves — that has always been the consumer script's own job, and it still is here: an `onSelect` can fire its own `TriggerServerEvent`/`QB.callback.trigger` exactly as before. `runServerAction`/`registerServerAction` are an **optional** convenience for a common case (an action needs to check the target is real and nearby, server-side) without hand-rolling that check every time:
+Neither real `qb-target` nor real `ox_target` validate actions server-side themselves — that has always been the consumer script's own job, and it still is here: an `onSelect` can fire its own `TriggerServerEvent`/`Kora.callback.trigger` exactly as before. `runServerAction`/`registerServerAction` are an **optional** convenience for a common case (an action needs to check the target is real and nearby, server-side) without hand-rolling that check every time:
 ```lua
 -- server
 exports.kora_target:registerServerAction('openTrunk', function(src, entity)
@@ -149,7 +149,7 @@ end)
 -- client, inside an onSelect
 local ok, result = exports.kora_target:runServerAction('openTrunk', entity, 3.0)
 ```
-`entity` must be a **networked** entity (a real ped/vehicle/player) — entities from `QB.entities.create` have no server-side twin to validate distance against.
+`entity` must be a **networked** entity (a real ped/vehicle/player) — entities from `Kora.entities.create` have no server-side twin to validate distance against.
 
 ## Example
 ```lua

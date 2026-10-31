@@ -16,19 +16,19 @@ local ENTITY_VALIDATION_MESSAGES = {
     too_far = 'Too far from target.',
 }
 
--- kora_lib's QB.callback module now forwards a handler's return values in full
+-- kora_lib's Kora.callback module now forwards a handler's return values in full
 -- (multi-value returns end to end), so this replies with (ok, ...) directly
 -- -- true plus the action handler's own return values, or false plus a
 -- reason string -- rather than the hand-rolled envelope table this used to
 -- need before that fix. Target.runServerAction on the client receives these
 -- as real return values with no unpacking of its own required.
-QB.callback.register('qbtarget:server:runAction', function(src, name, netId, _clientDistance, ...)
+Kora.callback.register('qbtarget:server:runAction', function(src, name, netId, _clientDistance, ...)
     local action = serverActions[name]
     if not action then
         return false, ('Unknown qbtarget server action: %s'):format(tostring(name))
     end
 
-    local entity, reason = QB.world.resolveNetworkEntity(src, netId, { maxDistance = action.maxDistance })
+    local entity, reason = Kora.world.resolveNetworkEntity(src, netId, { maxDistance = action.maxDistance })
     if not entity then
         return false, ENTITY_VALIDATION_MESSAGES[reason] or 'Target entity is unavailable.'
     end

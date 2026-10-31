@@ -3,7 +3,7 @@ Config = {}
 -- Keep the raw value when this resource is loaded with an older kora_lib. The
 -- descriptor makes this hot-path-safe setting editable live without changing
 -- kora_target's public Config shape.
-local configNumber = QB and QB.config and QB.config.number
+local configNumber = Kora and Kora.config and Kora.config.number
 
 Config.target = {
     -- Hold this key to enter targeting mode (raycasting + drawing a prompt
@@ -20,7 +20,7 @@ Config.target = {
     -- and only the press flips state. See client/loop.lua.
     toggle = false,
 
-    maxDistance = 10.0,            -- meters; QB.raycast.fromCamera's max reach while the hold key is down
+    maxDistance = 10.0,            -- meters; Kora.raycast.fromCamera's max reach while the hold key is down
     defaultOptionDistance = configNumber and configNumber(2.5, {
         label = 'Default option distance',
         description = 'How close players must be to use an interaction without its own distance setting, in metres. Changes apply immediately.',
@@ -121,58 +121,58 @@ Config.target = {
 }
 
 -- Registers this resource-owned configuration with kora_lib without changing its public Config table.
-if QB and QB.config and QB.config.adopt then
-    Config.target.sprites.offset.x = QB.config.number(Config.target.sprites.offset.x, { label = 'Icon east-west offset (metres)', advanced = true })
-    Config.target.sprites.offset.y = QB.config.number(Config.target.sprites.offset.y, { label = 'Icon north-south offset (metres)', advanced = true })
-    Config.target.sprites.offset.z = QB.config.number(Config.target.sprites.offset.z, { label = 'Icon height offset (metres)', advanced = true })
-    Config.target.sprites.colour.r = QB.config.integer(Config.target.sprites.colour.r, { label = 'Icon red', advanced = false, min = 0, max = 255 })
-    Config.target.sprites.colour.g = QB.config.integer(Config.target.sprites.colour.g, { label = 'Icon green', advanced = false, min = 0, max = 255 })
-    Config.target.sprites.colour.b = QB.config.integer(Config.target.sprites.colour.b, { label = 'Icon blue', advanced = false, min = 0, max = 255 })
-    Config.target.sprites.colour.a = QB.config.integer(Config.target.sprites.colour.a, { label = 'Icon opacity', advanced = false, min = 0, max = 255 })
-    Config.target.keybind.command = QB.config.string(Config.target.keybind.command, { label = 'Target command', advanced = true })
-    Config.target.keybind.defaultKey = QB.config.string(Config.target.keybind.defaultKey, { label = 'Default target key', advanced = false })
-    Config.target.keybind.label = QB.config.string(Config.target.keybind.label, { label = 'Target key label', advanced = false })
-    Config.target.legacyOutline.enabled = QB.config.boolean(Config.target.legacyOutline.enabled, { label = 'Legacy entity outlines', advanced = false })
-    Config.target.legacyOutline.colour = QB.config.list(Config.target.legacyOutline.colour, QB.config.integer(255, { min = 0, max = 255 }), { label = 'Legacy outline colour', advanced = false })
-    Config.target.sprites.enabled = QB.config.boolean(Config.target.sprites.enabled, { label = 'Show interaction location icons', advanced = false })
-    Config.target.sprites.drawDistance = QB.config.number(Config.target.sprites.drawDistance, { label = 'Location icon distance (metres)', advanced = false })
-    Config.target.sprites.dict = QB.config.string(Config.target.sprites.dict, { label = 'Icon texture collection', advanced = true })
-    Config.target.sprites.name = QB.config.string(Config.target.sprites.name, { label = 'Icon texture name', advanced = true })
-    Config.target.sprites.width = QB.config.number(Config.target.sprites.width, { label = 'Icon screen width', advanced = true })
-    Config.target.sprites.height = QB.config.number(Config.target.sprites.height, { label = 'Icon screen height', advanced = true })
-    Config.target.freezeOnMenu = QB.config.boolean(Config.target.freezeOnMenu, { label = 'Hold player still in option menu (legacy)', advanced = true })
+if Kora and Kora.config and Kora.config.adopt then
+    Config.target.sprites.offset.x = Kora.config.number(Config.target.sprites.offset.x, { label = 'Icon east-west offset (metres)', advanced = true })
+    Config.target.sprites.offset.y = Kora.config.number(Config.target.sprites.offset.y, { label = 'Icon north-south offset (metres)', advanced = true })
+    Config.target.sprites.offset.z = Kora.config.number(Config.target.sprites.offset.z, { label = 'Icon height offset (metres)', advanced = true })
+    Config.target.sprites.colour.r = Kora.config.integer(Config.target.sprites.colour.r, { label = 'Icon red', advanced = false, min = 0, max = 255 })
+    Config.target.sprites.colour.g = Kora.config.integer(Config.target.sprites.colour.g, { label = 'Icon green', advanced = false, min = 0, max = 255 })
+    Config.target.sprites.colour.b = Kora.config.integer(Config.target.sprites.colour.b, { label = 'Icon blue', advanced = false, min = 0, max = 255 })
+    Config.target.sprites.colour.a = Kora.config.integer(Config.target.sprites.colour.a, { label = 'Icon opacity', advanced = false, min = 0, max = 255 })
+    Config.target.keybind.command = Kora.config.string(Config.target.keybind.command, { label = 'Target command', advanced = true })
+    Config.target.keybind.defaultKey = Kora.config.string(Config.target.keybind.defaultKey, { label = 'Default target key', advanced = false })
+    Config.target.keybind.label = Kora.config.string(Config.target.keybind.label, { label = 'Target key label', advanced = false })
+    Config.target.legacyOutline.enabled = Kora.config.boolean(Config.target.legacyOutline.enabled, { label = 'Legacy entity outlines', advanced = false })
+    Config.target.legacyOutline.colour = Kora.config.list(Config.target.legacyOutline.colour, Kora.config.integer(255, { min = 0, max = 255 }), { label = 'Legacy outline colour', advanced = false })
+    Config.target.sprites.enabled = Kora.config.boolean(Config.target.sprites.enabled, { label = 'Show interaction location icons', advanced = false })
+    Config.target.sprites.drawDistance = Kora.config.number(Config.target.sprites.drawDistance, { label = 'Location icon distance (metres)', advanced = false })
+    Config.target.sprites.dict = Kora.config.string(Config.target.sprites.dict, { label = 'Icon texture collection', advanced = true })
+    Config.target.sprites.name = Kora.config.string(Config.target.sprites.name, { label = 'Icon texture name', advanced = true })
+    Config.target.sprites.width = Kora.config.number(Config.target.sprites.width, { label = 'Icon screen width', advanced = true })
+    Config.target.sprites.height = Kora.config.number(Config.target.sprites.height, { label = 'Icon screen height', advanced = true })
+    Config.target.freezeOnMenu = Kora.config.boolean(Config.target.freezeOnMenu, { label = 'Hold player still in option menu (legacy)', advanced = true })
     -- Unset menuMovement follows the legacy freezeOnMenu flag.
     local menuMovementDefault = Config.target.menuMovement
     if menuMovementDefault ~= 'freeze' and menuMovementDefault ~= 'close' and menuMovementDefault ~= 'allow' then
         menuMovementDefault = Config.target.freezeOnMenu and 'freeze' or 'allow'
     end
-    Config.target.menuMovement = QB.config.enum(menuMovementDefault, { label = 'Movement while option menu is open', advanced = false, options = { 'freeze', 'close', 'allow' } })
-    Config.target.lockCameraOnMenu = QB.config.boolean(Config.target.lockCameraOnMenu, { label = 'Lock camera while option menu is open', advanced = false })
-    Config.target.closeMenuOutOfRange = QB.config.boolean(Config.target.closeMenuOutOfRange, { label = 'Close option menu when out of range', advanced = false })
-    Config.target.showCloseHint = QB.config.boolean(Config.target.showCloseHint, { label = 'Show option menu close hint', advanced = false })
-    Config.target.suppressPauseOnClose = QB.config.boolean(Config.target.suppressPauseOnClose, { label = 'Block pause menu when closing option menu', advanced = false })
-    Config.target.pauseSuppressMs = QB.config.integer(Config.target.pauseSuppressMs, { label = 'Pause menu block time after closing (milliseconds)', advanced = true, min = 0, max = 2000 })
-    Config.target.sprites.allowPerZoneOverride = QB.config.boolean(Config.target.sprites.allowPerZoneOverride, { label = 'Let zones show icons individually', advanced = false })
-    Config.target.toggle = QB.config.boolean(Config.target.toggle, { label = 'Press to toggle targeting', advanced = false })
-    Config.target.maxDistance = QB.config.number(Config.target.maxDistance, { label = 'Target search distance (metres)', advanced = false })
-    Config.target.legacyMaxDistance = QB.config.number(Config.target.legacyMaxDistance, { label = 'Legacy target distance (metres)', advanced = true })
-    Config.target.boneTolerance = QB.config.number(Config.target.boneTolerance, { label = 'Vehicle part aim tolerance (metres)', advanced = true })
-    Config.target.tickIdle = QB.config.integer(Config.target.tickIdle, { label = 'Inactive check delay (milliseconds)', advanced = true, min = 0 })
-    Config.target.tickAcquire = QB.config.integer(Config.target.tickAcquire, { label = 'Unavailable target check delay (milliseconds)', advanced = true, min = 0 })
-    Config.target.tickActive = QB.config.integer(Config.target.tickActive, { label = 'Available target check delay (milliseconds)', advanced = true, min = 0 })
-    Config.target.tickMiss = QB.config.integer(Config.target.tickMiss, { label = 'Empty aim check delay (milliseconds)', advanced = true, min = 0 })
-    Config.target.staticMissRefresh = QB.config.integer(Config.target.staticMissRefresh, { label = 'Still empty aim refresh (milliseconds)', advanced = true, min = 0 })
-    Config.target.entityProbeInterval = QB.config.integer(Config.target.entityProbeInterval, { label = 'Extra entity search delay (milliseconds)', advanced = true, min = 0 })
-    Config.target.staticRefresh = QB.config.integer(Config.target.staticRefresh, { label = 'Still target refresh (milliseconds)', advanced = true, min = 0 })
-    Config.target.canInteractCacheMs = QB.config.integer(Config.target.canInteractCacheMs, { label = 'Available interaction reuse (milliseconds)', advanced = true, min = 0 })
-    Config.target.canInteractFailureCacheMs = QB.config.integer(Config.target.canInteractFailureCacheMs, { label = 'Unavailable interaction reuse (milliseconds)', advanced = true, min = 0 })
-    Config.target.diagnostics = QB.config.boolean(Config.target.diagnostics, { label = 'Log targeting performance', advanced = true })
-    Config.target.diagnosticsInterval = QB.config.integer(Config.target.diagnosticsInterval, { label = 'Performance log interval (milliseconds)', advanced = true, min = 0 })
-    Config.target.debug = QB.config.boolean(Config.target.debug, { label = 'Draw all target zone boundaries', advanced = true })
-    Config.target.serverActionMaxDistance = QB.config.number(Config.target.serverActionMaxDistance, { label = 'Server action distance cap (metres)', advanced = true })
-    Config.target.reticle = QB.config.boolean(Config.target.reticle, { label = 'Legacy aiming dot preference', advanced = true })
-    Config.target.demo = QB.config.boolean(Config.target.demo, { label = 'Enable demonstration interactions', advanced = true })
-    Config = QB.config.adopt(Config, { descriptions = {
+    Config.target.menuMovement = Kora.config.enum(menuMovementDefault, { label = 'Movement while option menu is open', advanced = false, options = { 'freeze', 'close', 'allow' } })
+    Config.target.lockCameraOnMenu = Kora.config.boolean(Config.target.lockCameraOnMenu, { label = 'Lock camera while option menu is open', advanced = false })
+    Config.target.closeMenuOutOfRange = Kora.config.boolean(Config.target.closeMenuOutOfRange, { label = 'Close option menu when out of range', advanced = false })
+    Config.target.showCloseHint = Kora.config.boolean(Config.target.showCloseHint, { label = 'Show option menu close hint', advanced = false })
+    Config.target.suppressPauseOnClose = Kora.config.boolean(Config.target.suppressPauseOnClose, { label = 'Block pause menu when closing option menu', advanced = false })
+    Config.target.pauseSuppressMs = Kora.config.integer(Config.target.pauseSuppressMs, { label = 'Pause menu block time after closing (milliseconds)', advanced = true, min = 0, max = 2000 })
+    Config.target.sprites.allowPerZoneOverride = Kora.config.boolean(Config.target.sprites.allowPerZoneOverride, { label = 'Let zones show icons individually', advanced = false })
+    Config.target.toggle = Kora.config.boolean(Config.target.toggle, { label = 'Press to toggle targeting', advanced = false })
+    Config.target.maxDistance = Kora.config.number(Config.target.maxDistance, { label = 'Target search distance (metres)', advanced = false })
+    Config.target.legacyMaxDistance = Kora.config.number(Config.target.legacyMaxDistance, { label = 'Legacy target distance (metres)', advanced = true })
+    Config.target.boneTolerance = Kora.config.number(Config.target.boneTolerance, { label = 'Vehicle part aim tolerance (metres)', advanced = true })
+    Config.target.tickIdle = Kora.config.integer(Config.target.tickIdle, { label = 'Inactive check delay (milliseconds)', advanced = true, min = 0 })
+    Config.target.tickAcquire = Kora.config.integer(Config.target.tickAcquire, { label = 'Unavailable target check delay (milliseconds)', advanced = true, min = 0 })
+    Config.target.tickActive = Kora.config.integer(Config.target.tickActive, { label = 'Available target check delay (milliseconds)', advanced = true, min = 0 })
+    Config.target.tickMiss = Kora.config.integer(Config.target.tickMiss, { label = 'Empty aim check delay (milliseconds)', advanced = true, min = 0 })
+    Config.target.staticMissRefresh = Kora.config.integer(Config.target.staticMissRefresh, { label = 'Still empty aim refresh (milliseconds)', advanced = true, min = 0 })
+    Config.target.entityProbeInterval = Kora.config.integer(Config.target.entityProbeInterval, { label = 'Extra entity search delay (milliseconds)', advanced = true, min = 0 })
+    Config.target.staticRefresh = Kora.config.integer(Config.target.staticRefresh, { label = 'Still target refresh (milliseconds)', advanced = true, min = 0 })
+    Config.target.canInteractCacheMs = Kora.config.integer(Config.target.canInteractCacheMs, { label = 'Available interaction reuse (milliseconds)', advanced = true, min = 0 })
+    Config.target.canInteractFailureCacheMs = Kora.config.integer(Config.target.canInteractFailureCacheMs, { label = 'Unavailable interaction reuse (milliseconds)', advanced = true, min = 0 })
+    Config.target.diagnostics = Kora.config.boolean(Config.target.diagnostics, { label = 'Log targeting performance', advanced = true })
+    Config.target.diagnosticsInterval = Kora.config.integer(Config.target.diagnosticsInterval, { label = 'Performance log interval (milliseconds)', advanced = true, min = 0 })
+    Config.target.debug = Kora.config.boolean(Config.target.debug, { label = 'Draw all target zone boundaries', advanced = true })
+    Config.target.serverActionMaxDistance = Kora.config.number(Config.target.serverActionMaxDistance, { label = 'Server action distance cap (metres)', advanced = true })
+    Config.target.reticle = Kora.config.boolean(Config.target.reticle, { label = 'Legacy aiming dot preference', advanced = true })
+    Config.target.demo = Kora.config.boolean(Config.target.demo, { label = 'Enable demonstration interactions', advanced = true })
+    Config = Kora.config.adopt(Config, { descriptions = {
         ['target.keybind.command'] = 'Internal command name used to start and stop targeting. Changing it can affect saved key bindings.',
         ['target.keybind.defaultKey'] = 'Key players use to target nearby interactions. Players can change their own binding in FiveM settings.',
         ['target.keybind.label'] = 'Text shown for the targeting key in the player key-binding settings.',

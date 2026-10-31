@@ -21,14 +21,14 @@ Target = Target or {}
 -- caller-supplied setter. Registering that same event under the STRING
 -- "qb-target" instead of this resource's real name is what actually makes
 -- exports['qb-target']:Fn() reach code running here.
-local provideExport = QB.compat.provideExport
+local provideExport = Kora.compat.provideExport
 
 -- A callback passed through an FXServer export boundary is represented as a
 -- table with an __call metamethod, not a Lua value whose type is "function".
 -- Banking's `action = function() OpenBank() end` reaches this bridge in that
 -- form, so accepting only plain functions made its visible target option a
 -- silent no-op when selected.
-local isCallable = QB.util.isCallable
+local isCallable = Kora.util.isCallable
 
 local function dispatchLegacy(option, entity)
     local data = {}
@@ -887,7 +887,7 @@ local function applyPedConfig(ped, data)
     if data.blockevents then SetBlockingOfNonTemporaryEvents(ped, true) end
 
     if data.animDict and data.anim then
-        local loaded, err = QB.stream.loadAnimDict(data.animDict, function(dict)
+        local loaded, err = Kora.stream.loadAnimDict(data.animDict, function(dict)
             TaskPlayAnim(ped, dict, data.anim, 8.0, 0, -1, data.flag or 1, 0, false, false, false)
         end)
         if not loaded then error(('SpawnPed animation failed: %s'):format(err), 2) end
@@ -950,7 +950,7 @@ local function spawnOnePed(data, owner, configIndex)
     assert(data.coords ~= nil, 'SpawnPed requires coords.')
 
     local ped
-    local model, err = QB.stream.loadModel(data.model, function(loadedModel)
+    local model, err = Kora.stream.loadModel(data.model, function(loadedModel)
         local z = data.minusOne and (data.coords.z - 1.0) or data.coords.z
         -- SpawnPed is a client compatibility helper and has no server authority
         -- capable of approving shared world state. Keep its configured peds local
@@ -1077,7 +1077,7 @@ end)
 -- Upstream returns coords, distance, entity, entityType. kora_lib's raycast
 -- primitive supplies hit, coords, entity, so compute the two remaining values.
 local function RaycastCamera(flag, playerCoords)
-    local hit, coords, entityHit = QB.raycast.fromCamera(16.0, flag or -1)
+    local hit, coords, entityHit = Kora.raycast.fromCamera(16.0, flag or -1)
     local ped = PlayerPedId and PlayerPedId() or 0
     playerCoords = playerCoords or GetEntityCoords(ped)
     local dx, dy, dz = coords.x - playerCoords.x, coords.y - playerCoords.y, coords.z - playerCoords.z

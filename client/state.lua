@@ -59,12 +59,12 @@ end
 -- resource-local copy of the same check kora_lib's own modules use (see e.g.
 -- kora_lib/modules/zones/client.lua), since kora_target is a separate resource
 -- shared through kora_lib so every compatibility boundary recognizes the same shapes.
-local isCallable = QB.util.isCallable
+local isCallable = Kora.util.isCallable
 
 -- A "coords-like" value: a table with numeric x/y/z, satisfied by both a
 -- real vector3 and a plain {x=, y=, z=} table (both are accepted throughout
 -- this file). Used to validate addBoxZone/addSphereZone/addPolyZone's
--- coords/size/points BEFORE handing them to QB.zones.* -- unlike `options`,
+-- coords/size/points BEFORE handing them to Kora.zones.* -- unlike `options`,
 -- these were previously passed through unchecked, so a malformed call only
 -- failed with an opaque error from deep inside kora_lib.
 local function isCoordsLike(x)
@@ -529,14 +529,14 @@ function Target.destroyRegistration(id)
     elseif registration.kind == "globalBone" then
         Target.byGlobalBone[id] = nil
     elseif registration.kind == "zone" then
-        -- The double-layer-ownership fix: QB.zones.box/sphere/poly attribute
+        -- The double-layer-ownership fix: Kora.zones.box/sphere/poly attribute
         -- the zone's own kora_lib-internal cleanup to whichever resource called
         -- INTO kora_lib -- which is "qbtarget" itself when a third-party
         -- consumer called exports.kora_target:addBoxZone, not that consumer.
         -- kora_lib's own cleanup-on-stop therefore never fires for the real
         -- consumer stopping; Target.ownership above (tracked against the
         -- REAL invoking resource, captured in Target.addBoxZone/etc before
-        -- ever calling into QB.zones.*) is what has to proactively tear the
+        -- ever calling into Kora.zones.*) is what has to proactively tear the
         -- underlying zone down here. See AGENTS.md "Ownership subtlety".
         unregisterZone(id, registration)
         if registration.zoneHandle then registration.zoneHandle.remove() end
@@ -546,7 +546,7 @@ end
 -- Keep caller ownership separate from kora_lib's zone ownership: kora_lib sees
 -- kora_target as its caller, while this registry tracks the original resource
 -- that crossed kora_target's export boundary.
-Target.ownership = QB.resources.registry(function(id)
+Target.ownership = Kora.resources.registry(function(id)
     Target.destroyRegistration(id)
 end)
 
@@ -762,14 +762,14 @@ function Target.addBoxZone(zoneOptions)
     local options = validateOptions(zoneOptions.options)
     local id = nextId()
 
-    -- Captured HERE, before calling into QB.zones.box -- see the "Ownership
+    -- Captured HERE, before calling into Kora.zones.box -- see the "Ownership
     -- subtlety" note on destroyRegistration/Target.ownership above and in
-    -- AGENTS.md. By the time QB.zones.box resolves its own
+    -- AGENTS.md. By the time Kora.zones.box resolves its own
     -- GetInvokingResource(), the caller will read as "kora_target", not the
     -- real external consumer.
     local owner = GetInvokingResource() or GetCurrentResourceName()
 
-    local zoneHandle = QB.zones.box({
+    local zoneHandle = Kora.zones.box({
         coords = zoneOptions.coords,
         size = zoneOptions.size,
         rotation = zoneOptions.rotation,
@@ -812,7 +812,7 @@ function Target.addSphereZone(zoneOptions)
     local id = nextId()
     local owner = GetInvokingResource() or GetCurrentResourceName()
 
-    local zoneHandle = QB.zones.sphere({
+    local zoneHandle = Kora.zones.sphere({
         coords = zoneOptions.coords,
         radius = zoneOptions.radius,
         debug = zoneDebugEnabled(zoneOptions),
@@ -858,7 +858,7 @@ function Target.addPolyZone(zoneOptions)
     local id = nextId()
     local owner = GetInvokingResource() or GetCurrentResourceName()
 
-    local zoneHandle = QB.zones.poly({
+    local zoneHandle = Kora.zones.poly({
         points = zoneOptions.points,
         thickness = zoneOptions.thickness,
         minZ = zoneOptions.minZ,
@@ -982,10 +982,10 @@ end
 ---Runs a server-registered action (see server/server.lua's
 ---ServerTarget.registerServerAction) with server-side distance revalidation
 ---against `entity`. Entirely optional -- an onSelect can just as easily fire
----its own TriggerServerEvent/QB.callback.trigger directly, exactly as with
+---its own TriggerServerEvent/Kora.callback.trigger directly, exactly as with
 ---real qb-target/ox_target.
 ---@param name string The action name passed to ServerTarget.registerServerAction on the server.
----@param entity? number A NETWORKED entity (a real ped/vehicle/player -- NOT QB.entities.create output, which has no server-side twin) to distance-check against. Omit for an action with nothing to validate a distance against.
+---@param entity? number A NETWORKED entity (a real ped/vehicle/player -- NOT Kora.entities.create output, which has no server-side twin) to distance-check against. Omit for an action with nothing to validate a distance against.
 ---@param maxDistance? number Overrides Config.target.serverActionMaxDistance.
 ---@param ... any Extra arguments forwarded to the server-side handler.
 ---@return boolean? ok `nil` if the callback itself failed (timeout/handshake failure -- check kora_lib's own console). Otherwise `true`/`false` reflecting the server action's own outcome (unknown action name, missing/too-far entity, the handler erroring, or the handler's own deliberate `return false, reason`).
@@ -998,19 +998,19 @@ function Target.runServerAction(name, entity, maxDistance, ...)
     if entity then
         assert(NetworkGetEntityIsNetworked(entity),
             "runServerAction requires a networked entity (a real ped/vehicle/player) -- entities from " ..
-            "QB.entities.create aren't networked and have no server-side twin to validate distance against.")
+            "Kora.entities.create aren't networked and have no server-side twin to validate distance against.")
         netId = NetworkGetNetworkIdFromEntity(entity)
     end
 
-    -- kora_lib's QB.callback module forwards a handler's return values in full
+    -- kora_lib's Kora.callback module forwards a handler's return values in full
     -- (multi-value returns end to end) -- server/server.lua's handler
     -- replies with (ok, ...) directly, so there's nothing to unpack here.
-    return QB.callback.trigger("qbtarget:server:runAction", name, netId, maxDistance, ...)
+    return Kora.callback.trigger("qbtarget:server:runAction", name, netId, maxDistance, ...)
 end
 
 -- kora_lib invokes the binding once with the hydrated active snapshot and again
 -- after every published live change. Keep this guarded so kora_target remains
 -- usable with older kora_lib releases during a rolling upgrade.
-if QB.config and QB.config.bind then
-    QB.config.bind('kora_target', { 'target' }, Target.applyConfig)
+if Kora.config and Kora.config.bind then
+    Kora.config.bind('kora_target', { 'target' }, Target.applyConfig)
 end

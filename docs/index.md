@@ -4,8 +4,8 @@ title: kora_target
 ---
 
 A crosshair/zone-based targeting and interaction engine for FiveM, built on
-[kora_lib](https://qbcore2.github.io/kora_lib/) (`QB.raycast` for aim resolution,
-`QB.zones` for area-based targets, `QB.world`/`QB.drawing` as the underlying
+[kora_lib](https://qbcore2.github.io/kora_lib/) (`Kora.raycast` for aim resolution,
+`Kora.zones` for area-based targets, `Kora.world`/`Kora.drawing` as the underlying
 pool-query/prompt-rendering primitives). It's one resource, no separate proxy
 resources: it declares `provide 'qb-target'` and `provide 'ox_target'` in its
 `fxmanifest.lua` and registers the real, public qb-target/ox_target export
@@ -196,7 +196,7 @@ Sugar over `addEntity`: registers `options` on `entity`, forcing every option on
 ### `addBoxZone({coords, size, rotation?, options, distance?, debug?, drawSprite?})`
 ### `addSphereZone({coords, radius, options, distance?, debug?, drawSprite?})`
 ### `addPolyZone({points, thickness?, minZ?, maxZ?, options, distance?, debug?, drawSprite?})`
-Zone-based targets, backed by `QB.zones.box/sphere/poly` — no aiming required, just aiming at (not necessarily standing inside) the zone. Returns the registration `id`.
+Zone-based targets, backed by `Kora.zones.box/sphere/poly` — no aiming required, just aiming at (not necessarily standing inside) the zone. Returns the registration `id`.
 
 Set `Config.target.debug = true` to outline every target zone while developing;
 an individual zone can also set `debug = true`. `Config.target.sprites` draws

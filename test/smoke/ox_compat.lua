@@ -8,14 +8,14 @@ local exportsByEvent = {}
 
 
 
-_G.QB = {
+_G.Kora = {
     resources = {},
     util = { isCallable = function(value)
         if type(value) == 'function' then return true end
         local mt = type(value) == 'table' and getmetatable(value) or nil
         return mt ~= nil and mt.__call ~= nil
     end },
-    compat = { isCallable = function(value) return QB.util.isCallable(value) end, provideExport = function(identity, name, fn)
+    compat = { isCallable = function(value) return Kora.util.isCallable(value) end, provideExport = function(identity, name, fn)
         AddEventHandler(('__cfx_export_%s_%s'):format(identity, name), function(setCB) setCB(fn) end)
     end },
     zones = {
@@ -42,9 +42,9 @@ _G.vector3 = function(...)
 end
 
 local selectedItems, clientEvents, serverEvents = nil, {}, {}
-QB.keybind = { add = function() end }
-QB.nui = { send = function() end }
-QB.interact = {
+Kora.keybind = { add = function() end }
+Kora.nui = { send = function() end }
+Kora.interact = {
     open = function(items) selectedItems = items; return true end,
     isActive = function() return false end,
     close = function() end,
@@ -240,8 +240,8 @@ harness.test('compat callbacks receive the captured hit, including delayed selec
     harness.assertEqual(option.coords, nil)
 
     clearRegistrations()
-    local oldSphere = QB.zones.sphere
-    QB.zones.sphere = function() return { remove = function() end, contains = function() return true end } end
+    local oldSphere = Kora.zones.sphere
+    Kora.zones.sphere = function() return { remove = function() end, contains = function() return true end } end
     local zone = getExport('addSphereZone')({ coords = point, radius = 1,
         options = { { label = 'Zone', onSelect = function(data) response = data end } } })
     Target._testRuntime.selectCandidates(resolve(0, point))
@@ -249,7 +249,7 @@ harness.test('compat callbacks receive the captured hit, including delayed selec
     harness.assertEqual(response.entity, 0, 'world geometry uses the documented numeric no-entity value')
     assertHitCoords(response, point)
     harness.assertEqual(response.distance, 1.5)
-    QB.zones.sphere = oldSphere
+    Kora.zones.sphere = oldSphere
     clearRegistrations()
 end)
 

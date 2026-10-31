@@ -18,7 +18,7 @@ Target = Target or {}
 -- exports.ox_target:Fn() resolve here -- only registering the underlying
 -- __cfx_export_ox_target_<name> event does). Duplicated rather than shared:
 -- kora_lib publishes the identity bridge for compatibility providers in either realm.
-local provideExport = QB.compat.provideExport
+local provideExport = Kora.compat.provideExport
 
 -- A callback passed through an FXServer export boundary is represented as a
 -- table with an __call metamethod, not a Lua value whose type is "function"
@@ -28,9 +28,9 @@ local provideExport = QB.compat.provideExport
 -- fall through to serverEvent/event/nothing, since `type(x) == 'function'`
 -- is false for it. Duplicated rather than shared for the same reason
 -- kora_lib also centralizes callable funcref detection across export boundaries.
-local isCallable = QB.util.isCallable
+local isCallable = Kora.util.isCallable
 
--- The compat response uses the captured hit, while native QB callbacks keep their arguments.
+-- The compat response uses the captured hit, while native Kora callbacks keep their arguments.
 local function responseFor(entity, context, server)
     local coords = context and context.anchorCoords
     local response = {
