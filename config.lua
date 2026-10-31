@@ -113,6 +113,8 @@ Config.target = {
     lockCameraOnMenu = false,      -- also lock the gameplay camera (look controls) while the menu is open
     closeMenuOutOfRange = true,    -- close the open menu when its target moves or the player walks out of range
     showCloseHint = true,          -- show a short "press to close" help message when the menu opens
+    suppressPauseOnClose = true,   -- Escape closes the option menu without also opening the GTA pause menu (pause controls are blocked while the menu is open and briefly after it closes). Set false to leave pause-key handling alone.
+    pauseSuppressMs = 250,         -- how long (milliseconds, 0-2000) the pause controls stay blocked after the menu closes; only used when suppressPauseOnClose is true
 
     reticle = true,                -- draw a small centre-screen dot while holding the key, so targeting mode is VISIBLE even when nothing is under the crosshair (brightens over a target). Set false for a fully headless engine.
     demo = false,                  -- development-only global ped/vehicle targets; enable explicitly when testing kora_target itself.
@@ -148,6 +150,8 @@ if QB and QB.config and QB.config.adopt then
     Config.target.lockCameraOnMenu = QB.config.boolean(Config.target.lockCameraOnMenu, { label = 'Lock camera while option menu is open', advanced = false })
     Config.target.closeMenuOutOfRange = QB.config.boolean(Config.target.closeMenuOutOfRange, { label = 'Close option menu when out of range', advanced = false })
     Config.target.showCloseHint = QB.config.boolean(Config.target.showCloseHint, { label = 'Show option menu close hint', advanced = false })
+    Config.target.suppressPauseOnClose = QB.config.boolean(Config.target.suppressPauseOnClose, { label = 'Block pause menu when closing option menu', advanced = false })
+    Config.target.pauseSuppressMs = QB.config.integer(Config.target.pauseSuppressMs, { label = 'Pause menu block time after closing (milliseconds)', advanced = true, min = 0, max = 2000 })
     Config.target.sprites.allowPerZoneOverride = QB.config.boolean(Config.target.sprites.allowPerZoneOverride, { label = 'Let zones show icons individually', advanced = false })
     Config.target.toggle = QB.config.boolean(Config.target.toggle, { label = 'Press to toggle targeting', advanced = false })
     Config.target.maxDistance = QB.config.number(Config.target.maxDistance, { label = 'Target search distance (metres)', advanced = false })
@@ -195,6 +199,8 @@ if QB and QB.config and QB.config.adopt then
         ['target.lockCameraOnMenu'] = 'Lock the gameplay camera while the multiple-option menu is open.',
         ['target.closeMenuOutOfRange'] = 'Close the multiple-option menu when its target is no longer within reach.',
         ['target.showCloseHint'] = 'Show a short message explaining how to close the multiple-option menu.',
+        ['target.suppressPauseOnClose'] = 'Stop Escape from also opening the game pause menu when it closes the multiple-option menu. The pause keys are blocked while the menu is open and briefly after it closes.',
+        ['target.pauseSuppressMs'] = 'How long the pause keys stay blocked after the multiple-option menu closes. Only used when the pause menu block is on.',
         ['target.sprites.allowPerZoneOverride'] = 'Allow a zone that asks for its own icon to show it even when location icons are turned off globally.',
         ['target.sprites.enabled'] = 'Show nearby icons for fixed interaction zones that allow them.',
         ['target.sprites.drawDistance'] = 'Maximum distance at which fixed interaction location icons are drawn.',

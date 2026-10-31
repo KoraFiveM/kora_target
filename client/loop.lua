@@ -80,6 +80,51 @@ end
 local MENU_MOVE_CONTROLS = { 21, 22, 30, 31, 32, 33, 34, 35, 36, 44 }
 local MENU_LOOK_CONTROLS = { 1, 2 }
 
+-- Escape closes the option menu, and the same key press then reaches the game
+-- and opens the pause menu. While the menu is open, and for a short window
+-- after it closes, the pause controls are disabled (and a pause menu that still
+-- opened is shut again) so closing the menu never leaves the player in it.
+-- INPUT_FRONTEND_PAUSE, INPUT_FRONTEND_PAUSE_ALTERNATE, INPUT_FRONTEND_CANCEL-ESC
+local PAUSE_CONTROLS = { 199, 200, 322 }
+local pauseSuppressUntil, pauseSuppressRunning = 0, false
+
+local function pauseSuppressEnabled()
+    return Config.target.suppressPauseOnClose == true
+end
+
+local function pauseSuppressWindow()
+    local ms = tonumber(Config.target.pauseSuppressMs) or 250
+    if ms < 0 then return 0 end
+    if ms > 2000 then return 2000 end
+    return ms
+end
+
+local function suppressPauseFrame(forceClose)
+    for _, control in ipairs(PAUSE_CONTROLS) do DisableControlAction(0, control, true) end
+    if forceClose and IsPauseMenuActive() then
+        SetPauseMenuActive(false)
+        SetFrontendActive(false)
+    end
+end
+
+-- Starts (or extends) the short post-close suppression window. It always ends,
+-- so the pause menu is never blocked permanently.
+local function startPauseSuppression()
+    if not pauseSuppressEnabled() then return end
+    local window = pauseSuppressWindow()
+    if window <= 0 then return end
+    pauseSuppressUntil = GetGameTimer() + window
+    if pauseSuppressRunning then return end
+    pauseSuppressRunning = true
+    CreateThread(function()
+        while GetGameTimer() < pauseSuppressUntil do
+            suppressPauseFrame(true)
+            Wait(0)
+        end
+        pauseSuppressRunning = false
+    end)
+end
+
 local function menuMovementPressed()
     if math.abs(GetControlNormal(0, 30)) > 0.1 or math.abs(GetControlNormal(0, 31)) > 0.1 then return true end
     for _, control in ipairs(MENU_MOVE_CONTROLS) do
@@ -93,6 +138,7 @@ end
 -- down). Movement already held when the menu opened does not count until it is
 -- released and pressed again, so releasing Alt mid-stride does not dismiss it.
 local function menuInputFrame(mode, state)
+    if pauseSuppressEnabled() then suppressPauseFrame(false) end
     if mode == 'freeze' then
         for _, control in ipairs(MENU_MOVE_CONTROLS) do DisableControlAction(0, control, true) end
     end
@@ -109,8 +155,10 @@ local function menuInputFrame(mode, state)
 end
 
 local function closeTargetMenu()
+    local wasOpen = menuOpen
     if menuOpen then QB.interact.close() end
     menuOpen = false
+    if wasOpen then startPauseSuppression() end
     if menuHintShown then ClearAllHelpMessages() end
     menuHintShown = false
     setMenuPositionFrozen(false)
@@ -765,6 +813,9 @@ if Config.target.testMode then
         closeTargetMenu = closeTargetMenu,
         menuMovementMode = menuMovementMode,
         menuInputFrame = menuInputFrame,
+        suppressPauseFrame = suppressPauseFrame,
+        pauseSuppressUntil = function() return pauseSuppressUntil end,
+        resetPauseSuppression = function() pauseSuppressUntil, pauseSuppressRunning = 0, false end,
         resolveCandidates = resolveCandidates,
         resolverWait = function(candidates, entity)
             currentCandidates, currentRaycastEntity = candidates, entity

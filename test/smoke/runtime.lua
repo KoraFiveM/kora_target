@@ -688,6 +688,15 @@ _G.DisableControlAction = function(_, control, disabled) if disabled then disabl
 _G.IsControlPressed = function(_, control) return pressedControls[control] == true end
 _G.GetControlNormal = function(_, control) return controlNormals[control] or 0.0 end
 
+-- The pause controls (199/200/322) are disabled by design while a menu is open; these
+-- checks are about movement and camera controls only.
+local function onlyPauseControlsDisabled()
+    for control in pairs(disabledControls) do
+        if control ~= 199 and control ~= 200 and control ~= 322 then return false end
+    end
+    return true
+end
+
 local function resetMenuInput()
     disabledControls, pressedControls, controlNormals = {}, {}, {}
     Config.target.menuMovement, Config.target.freezeOnMenu, Config.target.lockCameraOnMenu = nil, false, false
@@ -737,7 +746,7 @@ harness.test('menuMovement=allow neither freezes nor disables controls nor close
     harness.assertTrue(not frozenEntities[1], 'allow mode must not freeze')
     pressedControls[32] = true
     harness.assertFalse(runtime.menuInputFrame('allow', {}), 'movement does not close in allow mode')
-    harness.assertTrue(next(disabledControls) == nil, 'allow mode disables no controls')
+    harness.assertTrue(onlyPauseControlsDisabled(), 'allow mode disables no movement or camera controls')
     resetMenuInput()
 end)
 
@@ -758,7 +767,7 @@ harness.test('menuMovement=close closes on a new movement press but not on movem
     runtime.menuInputFrame('close', held)
     controlNormals[31] = -1.0
     harness.assertTrue(runtime.menuInputFrame('close', held), 'analogue stick movement after release closes')
-    harness.assertTrue(next(disabledControls) == nil, 'close mode disables no controls')
+    harness.assertTrue(onlyPauseControlsDisabled(), 'close mode disables no movement or camera controls')
     resetMenuInput()
 end)
 
@@ -780,6 +789,70 @@ harness.test('every close path releases the freeze', function()
     harness.assertTrue(frozenEntities[1], 'frozen while open')
     Target._cancelCurrentTargeting()
     harness.assertFalse(frozenEntities[1], 'cancelling targeting (also the path taken on resource stop) releases the freeze')
+    resetMenuInput()
+end)
+
+local pauseActive, pauseClosed, frontendClosed = false, 0, 0
+_G.IsPauseMenuActive = function() return pauseActive end
+_G.SetPauseMenuActive = function(active) if not active then pauseClosed = pauseClosed + 1; pauseActive = false end end
+_G.SetFrontendActive = function(active) if not active then frontendClosed = frontendClosed + 1 end end
+
+harness.test('pause menu suppression defaults on with a 250ms window', function()
+    harness.assertTrue(Config.target.suppressPauseOnClose == true, 'suppressPauseOnClose defaults on')
+    harness.assertEqual(Config.target.pauseSuppressMs, 250, 'pauseSuppressMs default')
+end)
+
+harness.test('open menu disables the pause controls every frame without touching movement', function()
+    resetMenuInput()
+    runtime.resetPauseSuppression()
+    runtime.menuInputFrame('allow', {})
+    for _, control in ipairs({ 199, 200, 322 }) do
+        harness.assertTrue(disabledControls[control], 'pause control ' .. control .. ' must be disabled while the menu is open')
+    end
+    harness.assertTrue(not disabledControls[32] and not disabledControls[1], 'movement and camera stay as configured')
+    resetMenuInput()
+end)
+
+harness.test('suppressPauseOnClose=false leaves the pause controls alone', function()
+    resetMenuInput()
+    runtime.resetPauseSuppression()
+    Config.target.suppressPauseOnClose = false
+    runtime.menuInputFrame('allow', {})
+    harness.assertTrue(next(disabledControls) == nil, 'no controls disabled when the option is off')
+    runtime.selectCandidates(menuCandidates)
+    runtime.closeTargetMenu()
+    harness.assertEqual(runtime.pauseSuppressUntil(), 0, 'no suppression window when off')
+    Config.target.suppressPauseOnClose = true
+    resetMenuInput()
+end)
+
+harness.test('closing an open menu starts a bounded suppression window; closing nothing does not', function()
+    resetMenuInput()
+    runtime.resetPauseSuppression()
+    now = 7000
+    runtime.closeTargetMenu()
+    harness.assertEqual(runtime.pauseSuppressUntil(), 0, 'closing when no menu was open starts no window')
+    runtime.selectCandidates(menuCandidates)
+    runtime.closeTargetMenu()
+    harness.assertEqual(runtime.pauseSuppressUntil(), 7250, 'window ends pauseSuppressMs after the close')
+    Config.target.pauseSuppressMs = 99999
+    runtime.resetPauseSuppression()
+    runtime.selectCandidates(menuCandidates)
+    runtime.closeTargetMenu()
+    harness.assertEqual(runtime.pauseSuppressUntil(), 9000, 'window is capped at 2000ms so the pause menu is never blocked for long')
+    Config.target.pauseSuppressMs = 250
+    runtime.resetPauseSuppression()
+    resetMenuInput()
+end)
+
+harness.test('a pause menu that still opened is closed only when forced', function()
+    resetMenuInput()
+    pauseActive, pauseClosed, frontendClosed = true, 0, 0
+    runtime.suppressPauseFrame(false)
+    harness.assertTrue(pauseActive and pauseClosed == 0, 'open menu frames do not force-close the pause menu')
+    runtime.suppressPauseFrame(true)
+    harness.assertFalse(pauseActive, 'post-close frame closes the pause menu')
+    harness.assertEqual(frontendClosed, 1, 'frontend deactivated too')
     resetMenuInput()
 end)
 
