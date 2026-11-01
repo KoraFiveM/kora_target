@@ -13,8 +13,8 @@
 Target = Target or {}
 
 -- See client/compat/qb-target.lua's identical copy of this helper for why
--- it's needed (`provide` in fxmanifest.lua alone doesn't make
--- exports.ox_target:Fn() resolve here -- only registering the underlying
+-- it's needed (kora_target doesn't `provide 'ox_target'`, and even
+-- `provide` alone wouldn't make exports.ox_target:Fn() resolve here -- only registering the underlying
 -- __cfx_export_ox_target_<name> event does). Duplicated rather than shared:
 -- kora_lib publishes the identity bridge for compatibility providers in either realm.
 local provideExport = Kora.compat.provideExport

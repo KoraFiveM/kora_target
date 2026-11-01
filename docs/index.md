@@ -7,11 +7,14 @@ A crosshair/zone-based targeting and interaction engine for FiveM, built on
 [kora_lib](https://qbcore2.github.io/kora_lib/) (`Kora.raycast` for aim resolution,
 `Kora.zones` for area-based targets, `Kora.world`/`Kora.drawing` as the underlying
 pool-query/prompt-rendering primitives). It's one resource, no separate proxy
-resources: it declares `provide 'qb-target'` and `provide 'ox_target'` in its
-`fxmanifest.lua` and registers the real, public qb-target/ox_target export
+resources: it declares `provide 'qb-target'` in its
+`fxmanifest.lua` (not `ox_target`; the `stubs/ox_target` placeholder owns that
+name) and registers the real, public qb-target/ox_target export
 names directly, so scripts written against `exports['qb-target']:...` or
 `exports.ox_target:...` keep working unmodified against this same running
-resource.
+resource. `exports.ox_target:*` works without the placeholder; resources that
+declare `dependency 'ox_target'` or check `GetResourceState('ox_target')` need
+`stubs/ox_target` ensured after kora_target.
 
 ## Requirements
 
