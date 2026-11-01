@@ -861,4 +861,22 @@ harness.test('a pause menu that still opened is closed only when forced', functi
     resetMenuInput()
 end)
 
+harness.test('forceRelease cancels the session, skips the release selection and re-sends the key release', function()
+    local sent = {}
+    _G.ExecuteCommand = function(command) sent[#sent + 1] = command end
+    local released = 0
+    local previous = Target._releaseLegacyFocus
+    Target._releaseLegacyFocus = function() released = released + 1 end
+    runtime.setHolding(true)
+    Target.active = true
+    runtime.forceRelease()
+    harness.assertFalse(runtime.isHolding(), 'holding is cleared')
+    harness.assertFalse(Target.active, 'targeting is inactive')
+    harness.assertEqual(released, 1, 'legacy NUI focus is released')
+    harness.assertEqual(sent[1], '-' .. Config.target.keybind.command, 'the keybind release is re-sent')
+    harness.assertTrue(Config.target.recovery.enabled, 'recovery is on by default')
+    harness.assertEqual(Config.target.recovery.resetCommand, 'target-reset', 'reset command default')
+    Target._releaseLegacyFocus = previous
+end)
+
 harness.report('qbtarget runtime')

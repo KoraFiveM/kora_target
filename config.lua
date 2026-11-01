@@ -20,6 +20,18 @@ Config.target = {
     -- and only the press flips state. See client/loop.lua.
     toggle = false,
 
+    -- Stuck-target recovery. Alt+Tab while holding the key swallows the key-up
+    -- event, which used to leave targeting (and any legacy NUI focus) stuck on.
+    -- While a session runs, a watchdog checks the physical key and cancel
+    -- inputs and releases the session (no option is run) when needed.
+    recovery = {
+        enabled = true,          -- master switch for everything below
+        releaseGraceMs = 250,    -- hold mode: ms the key must read "up" (after being seen down) before the session is dropped
+        cancelOnPause = true,    -- cancel targeting when the pause menu opens
+        cancelControls = true,   -- Escape, Backspace and right-click cancel targeting without selecting
+        resetCommand = 'target-reset', -- chat/F8 command that force-clears targeting; false or "" disables it
+    },
+
     maxDistance = 10.0,            -- meters; Kora.raycast.fromCamera's max reach while the hold key is down
     defaultOptionDistance = configNumber and configNumber(2.5, {
         label = 'Default option distance',

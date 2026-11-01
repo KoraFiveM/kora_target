@@ -609,6 +609,73 @@ local function selectCandidates(candidates)
     end)
 end
 
+local releaseGuard = false
+
+-- Cancels the current targeting session without running an option, clears any
+-- legacy NUI focus, and re-sends -<command> so kora_lib's keybind drops its
+-- own "pressed" flag (otherwise the next +<command> is ignored as a repeat).
+local function forceRelease()
+    holding = false
+    closeTargetMenu()
+    resetRuntimeState()
+    Target.active = false
+    if Target._releaseLegacyFocus then Target._releaseLegacyFocus() end
+    releaseGuard = true
+    pcall(ExecuteCommand, '-' .. Config.target.keybind.command)
+    releaseGuard = false
+end
+Target._forceRelease = forceRelease
+
+local function recoveryConfig()
+    local recovery = Config.target.recovery
+    if type(recovery) ~= 'table' or recovery.enabled == false then return nil end
+    return recovery
+end
+
+local CANCEL_CONTROLS = { 200, 177, 25 } -- Escape, Backspace/right-click (cancel), aim
+
+-- A held key whose release event never arrives (Alt+Tab while holding Alt)
+-- leaves `holding` true forever. While a session runs, poll the physical key
+-- state and the cancel inputs and drop the session when either says so.
+local function startWatchdog()
+    local recovery = recoveryConfig()
+    if not recovery then return end
+    CreateThread(function()
+        local keyHash = joaat('+' .. Config.target.keybind.command) | 0x80000000
+        local seenDown, upSince = false, nil
+        while holding do
+            local now = GetGameTimer()
+            if recovery.cancelOnPause ~= false and IsPauseMenuActive() then
+                forceRelease()
+                break
+            end
+            if recovery.cancelControls ~= false then
+                for _, control in ipairs(CANCEL_CONTROLS) do
+                    if IsDisabledControlJustPressed(0, control) then
+                        startPauseSuppression()
+                        forceRelease()
+                        return
+                    end
+                end
+            end
+            if not Config.target.toggle then
+                if IsControlPressed(0, keyHash) or IsDisabledControlPressed(0, keyHash) then
+                    seenDown, upSince = true, nil
+                elseif seenDown then
+                    -- Only trusted after the key was seen down once, so a
+                    -- native that cannot see the key can never cancel a hold.
+                    upSince = upSince or now
+                    if now - upSince >= (tonumber(recovery.releaseGraceMs) or 250) then
+                        forceRelease()
+                        break
+                    end
+                end
+            end
+            Wait(0)
+        end
+    end)
+end
+
 local function startTargeting()
     if holdingThread or Target.interactionsLocked() then
         holding = false
@@ -621,6 +688,7 @@ local function startTargeting()
     resetRuntimeState()
     syncTargetHud(true, currentCandidates)
     diagnostics.lastReport = GetGameTimer()
+    startWatchdog()
 
     CreateThread(function()
         while holding do
@@ -692,6 +760,7 @@ Kora.keybind.add({
         end
     end,
     onReleased = function()
+        if releaseGuard then return end
         if Target.interactionsLocked() then
             holding = false
             Target.active = false
@@ -706,6 +775,15 @@ Kora.keybind.add({
         selectCandidates(candidates)
     end,
 })
+
+-- Manual recovery if targeting ever sticks (e.g. after Alt+Tab).
+do
+    local recovery = recoveryConfig()
+    local name = recovery and recovery.resetCommand
+    if type(name) == 'string' and name ~= '' then
+        RegisterCommand(name, function() forceRelease() end, false)
+    end
+end
 
 -- Runtime override via Kora.zones.setDebug(nil, ...) for zones already created; config is only read at registration.
 -- `[on|off]`, or no argument to toggle.
@@ -751,6 +829,9 @@ if Config.target.testMode then
         selectCandidates = selectCandidates,
         menuTargetInRange = menuTargetInRange,
         closeTargetMenu = closeTargetMenu,
+        forceRelease = forceRelease,
+        isHolding = function() return holding end,
+        setHolding = function(value) holding = value end,
         menuMovementMode = menuMovementMode,
         menuInputFrame = menuInputFrame,
         suppressPauseFrame = suppressPauseFrame,

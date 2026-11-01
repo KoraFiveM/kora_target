@@ -11,6 +11,10 @@ still be passed to `AddComboZone`.
 ## Usage
 Hold `Config.target.keybind` (default `LMENU`, i.e. left Alt) to enter targeting mode. While held, aiming at a registered entity/model/global-type/global-bone/zone shows a world-space prompt fixed at screen centre (it never moves the mouse pointer or takes NUI focus). A zone match is decided by where the crosshair's raycast actually lands, not by whether the player is standing inside a zone -- you don't need to be inside a zone to target it, just aiming at a point within it. Release Alt to act: a sole available option runs immediately (its label is shown in the prompt while held); two or more options open kora_lib's pointer-free interact selector after Alt is released. Use scroll or Up/Down to choose, then E to select.
 
+## Stuck-target recovery
+
+If the key-up event is lost (typically Alt+Tab while holding Alt), targeting would stay on. `Config.target.recovery` (enabled by default) runs a watchdog during a session: hold mode cancels when the key is no longer physically down for `releaseGraceMs` (default 250); `cancelOnPause` (true) cancels when the pause menu opens; `cancelControls` (true) lets Escape, Backspace or right-click cancel without selecting. `resetCommand` (default `target-reset`; false/empty disables) force-clears targeting, the menu and any legacy NUI focus. Hold and toggle modes both keep working.
+
 ## Performance configuration
 Targeting has no idle client thread while its key is up, and no targeting loop
 at all once it is released. The first scan happens immediately on activation;

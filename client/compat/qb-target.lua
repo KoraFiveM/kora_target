@@ -1146,6 +1146,11 @@ DisableNUI = function()
     legacyHasFocus = false
 end
 
+-- Lets client/loop.lua's stuck-target recovery drop focus this file granted.
+Target._releaseLegacyFocus = function()
+    if legacyHasFocus then DisableNUI() end
+end
+
 local function EnableNUI(options)
     if not Target.active or legacyHasFocus then return end
     SetCursorLocation(0.5, 0.5)
