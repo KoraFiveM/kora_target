@@ -13,6 +13,8 @@ Hold `Config.target.keybind` (default `LMENU`, i.e. left Alt) to enter targeting
 
 ## Stuck-target recovery
 
+Dead, last-stand and downed players (kora_core metadata `isdead`/`inlaststand`, or the native fatal-injury flag) cannot target or run options while `Config.target.disableWhileDead` is `true` (default). The state is re-read right before an option fires, and an open eye or menu closes when the player goes down. `Config.target.allowWhileDead` is a list of option `name`s that stay usable while down (default empty); `downedPollMs` (250) sets the read interval.
+
 If the key-up event is lost (typically Alt+Tab while holding Alt), targeting or the option menu would stay on. `Config.target.recovery` (enabled by default) runs a watchdog while a session, the option menu or legacy NUI focus is active. It never runs an option when it cancels. Options:
 
 - `cancelOnFocusLoss` (true): cancel when the game window loses focus (`IsGameWindowFocused`, plus blur events from `ui/focus.html` when `nuiListener` is true).

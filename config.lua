@@ -37,6 +37,18 @@ Config.target = {
         resetCommand = 'target-reset', -- chat/F8 command that force-clears targeting; false or "" disables it
     },
 
+    -- Dead / last stand / downed players cannot open the targeting eye or run
+    -- option actions (e.g. a bleeding-out cop cuffing people). Death state comes
+    -- from kora_core player metadata (isdead / inlaststand, set by kora_ambulance)
+    -- plus the native fatal-injury flag, re-checked right before an option fires.
+    -- Set false to restore the old behaviour.
+    disableWhileDead = true,
+    downedPollMs = 250,            -- ms between death-state reads while targeting
+    -- Option names (the `name` field of an option) that stay usable while
+    -- downed, e.g. { "ems_call_help" }. Empty = nothing; any entry also lets a
+    -- downed player open the eye, with only these options listed.
+    allowWhileDead = {},
+
     maxDistance = 10.0,            -- meters; Kora.raycast.fromCamera's max reach while the hold key is down
     defaultOptionDistance = configNumber and configNumber(2.5, {
         label = 'Default option distance',

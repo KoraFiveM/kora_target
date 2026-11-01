@@ -574,6 +574,7 @@ end)
 local executed, exportCalls, heldItems = {}, {}, {}
 _G.ExecuteCommand = function(command) executed[#executed + 1] = command end
 _G.exports = setmetatable({
+    kora_core = { getPlayerData = function() return nil end },
     kora_inventory = { HasItem = function(_, name, amount)
         return (heldItems[name] or 0) >= (amount or 1)
     end },

@@ -897,4 +897,41 @@ harness.test('+playerTarget/-playerTarget alias the target keybind press and rel
     harness.assertFalse(Target.active, '-playerTarget must end targeting like the keybind release')
 end)
 
+harness.test('dead / last stand players cannot target or run options; disableWhileDead and allowWhileDead opt out', function()
+    harness.assertTrue(Config.target.disableWhileDead, 'on by default')
+    harness.assertEqual(#Config.target.allowWhileDead, 0, 'empty whitelist by default')
+    local metadata = { isdead = false, inlaststand = false }
+    local previousExports = _G.exports
+    _G.exports = { kora_core = { getPlayerData = function() return { metadata = metadata } end } }
+    local ran = 0
+    local candidate = { entity = 1, option = { name = 'cuff', label = 'Cuff', onSelect = function() ran = ran + 1 end } }
+
+    Target._testRuntime.selectCandidates({ candidate })
+    harness.assertEqual(ran, 1, 'alive player runs the option')
+
+    metadata.inlaststand = true
+    Target._testRuntime.selectCandidates({ candidate })
+    harness.assertEqual(ran, 1, 'last stand blocks the action even with a stale poll cache')
+    commands['+playerTarget']()
+    harness.assertFalse(Target.active, 'targeting does not start while downed')
+    commands['-playerTarget']()
+
+    metadata.inlaststand, metadata.isdead = false, true
+    harness.assertTrue(Target.isDowned(true), 'isdead blocks too')
+
+    Config.target.allowWhileDead = { 'cuff' }
+    Target._testRuntime.selectCandidates({ candidate })
+    harness.assertEqual(ran, 2, 'whitelisted option name still runs while down')
+    Config.target.allowWhileDead = {}
+
+    Config.target.disableWhileDead = false
+    Target._testRuntime.selectCandidates({ candidate })
+    harness.assertEqual(ran, 3, 'option off restores old behaviour')
+    Config.target.disableWhileDead = true
+
+    metadata.isdead = false
+    harness.assertFalse(Target.isDowned(true))
+    _G.exports = previousExports
+end)
+
 harness.report('qbtarget runtime')

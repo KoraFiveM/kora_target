@@ -179,6 +179,49 @@ function Target._cancelCurrentTargeting()
     Target.active = false
 end
 
+-- Dead / last stand / downed gate (Config.target.disableWhileDead). The Kora
+-- stack records death as kora_core player metadata (isdead / inlaststand, set by
+-- kora_ambulance); the native fatal-injury flag (Kora.cache.isDead) covers the
+-- gap before the metadata lands. The metadata export is polled at most every
+-- downedPollMs; runOption passes fresh = true to bypass that cache.
+local downedCache, downedCheckedAt = false, -math.huge
+
+local function readDowned()
+    local ok, data = pcall(function() return exports.kora_core:getPlayerData() end)
+    local metadata = ok and type(data) == "table" and data.metadata or nil
+    if type(metadata) == "table" and (metadata.isdead == true or metadata.inlaststand == true) then return true end
+    local state = LocalPlayer and LocalPlayer.state
+    if state and (state.isDead == true or state.inLastStand == true or state.isDowned == true) then return true end
+    return Kora.cache ~= nil and Kora.cache.isDead ~= nil and Kora.cache.isDead() == true
+end
+
+---True when the local player is dead, in last stand or downed and
+---Config.target.disableWhileDead is on.
+---@param fresh boolean|nil skip the poll cache (used right before an action fires)
+---@return boolean
+function Target.isDowned(fresh)
+    if Config.target.disableWhileDead == false then return false end
+    local now = GetGameTimer()
+    if fresh or now - downedCheckedAt >= (tonumber(Config.target.downedPollMs) or 250) then
+        downedCheckedAt = now
+        downedCache = readDowned()
+    end
+    return downedCache
+end
+
+local function allowedWhileDown()
+    local list = Config.target.allowWhileDead
+    return type(list) == "table" and list or {}
+end
+
+local function optionAllowedWhileDown(option)
+    if not option or option.name == nil then return false end
+    for _, name in ipairs(allowedWhileDown()) do
+        if name == option.name then return true end
+    end
+    return false
+end
+
 local function classifyEntity(entity)
     -- GetEntityType is 0 for a handle that no longer resolves; treating it as an object would let it reach GetEntityModel and fault.
     local ok, entityType = pcall(GetEntityType, entity)
@@ -310,6 +353,7 @@ local function zoneRegistrationsAt(point, pedCoords, aimedEntity)
 end
 
 local function optionAllowed(registration, optionIndex, option, entity, distance, now, anchorCoords)
+    if Target.isDowned() and not optionAllowedWhileDown(option) then return false end
     if not option.canInteract then return true end
 
     -- Successful checks remain uncached by default because third-party
@@ -553,6 +597,10 @@ local function menuTargetInRange(candidates)
 end
 
 local function runOption(candidate)
+    if Target.isDowned(true) and not optionAllowedWhileDown(candidate.option) then
+        Target._cancelCurrentTargeting()
+        return
+    end
     local ok, err
     if candidate.option._onSelectContext then
         ok, err = pcall(candidate.option._onSelectContext, candidate)
@@ -598,6 +646,7 @@ local function selectCandidates(candidates)
         local inputState = { moving = movementMode == 'close' and menuMovementPressed() }
         while Kora.interact.isActive() do
             if menuInputFrame(movementMode, inputState) then break end
+            if Target.isDowned() and #allowedWhileDown() == 0 then break end
             if Config.target.closeMenuOutOfRange then
                 local now = GetGameTimer()
                 if now >= nextRangeCheck then
@@ -781,7 +830,7 @@ if RegisterNUICallback then
 end
 
 local function startTargeting()
-    if holdingThread or Target.interactionsLocked() then
+    if holdingThread or Target.interactionsLocked() or (Target.isDowned(true) and #allowedWhileDown() == 0) then
         holding = false
         Target.active = false
         resetRuntimeState()
@@ -797,6 +846,15 @@ local function startTargeting()
     CreateThread(function()
         while holding do
             local now = GetGameTimer()
+            if Target.isDowned() and #allowedWhileDown() == 0 then
+                holding = false
+                closeTargetMenu()
+            end
+            if not holding then
+                Target.active = false
+                resetRuntimeState()
+                break
+            end
             if not Target.enabled or menuOpen or Target.interactionsLocked() then
                 if Target.interactionsLocked() then
                     holding = false
@@ -841,7 +899,7 @@ local targetKeybind = {
     defaultMapper = 'keyboard',
     defaultKey = Config.target.keybind.defaultKey,
     onPressed = function()
-        if Target.interactionsLocked() then
+        if Target.interactionsLocked() or (Target.isDowned(true) and #allowedWhileDown() == 0) then
             holding = false
             Target.active = false
             resetRuntimeState()
