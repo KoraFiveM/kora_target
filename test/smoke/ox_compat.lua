@@ -58,7 +58,9 @@ _G.EndTextCommandDisplayHelp = function() end
 _G.ClearAllHelpMessages = function() end
 _G.CreateThread = function() end
 _G.RegisterCommand = function() end
-_G.GetGameTimer = function() return 0 end
+local clock = 0
+_G.GetGameTimer = function() return clock end
+_G.RegisterNetEvent = function(name, handler) netHandlers = netHandlers or {}; netHandlers[name] = handler end
 _G.DoesEntityExist = function(entity) return entity ~= nil and entity ~= 0 end
 _G.GetEntityType = function() return 3 end
 _G.GetEntityModel = function() return 123 end
@@ -184,12 +186,16 @@ harness.test('addEntity/removeEntity accept an array of network ids', function()
     harness.assertTrue(Target.byEntity[32] == nil, 'removeEntity must clear all resolved local handles')
 end)
 
-harness.test('isActive reflects Target.getState().hovering', function()
-    harness.assertFalse(isActive(), 'isActive must be false with nothing hovered')
+harness.test('isActive reflects the targeting session (Target.active), not what is hovered', function()
+    Target.active, Target.hovering = false, nil
+    harness.assertFalse(isActive(), 'isActive must be false when no targeting session is running')
     Target.hovering = { registrationId = 1 }
-    harness.assertTrue(isActive(), 'isActive must be true once Target.hovering is set')
-    harness.assertEqual(getState().hovering, Target.hovering, 'getState must expose the same hovering value isActive reads')
+    harness.assertFalse(isActive(), 'hovering alone must not make isActive true')
     Target.hovering = nil
+    Target.active = true
+    harness.assertTrue(isActive(), 'isActive must be true for the whole session even with nothing under the reticle')
+    Target.active = false
+    harness.assertEqual(getState().active, false, 'getState exposes the same flag isActive reads')
 end)
 
 
@@ -268,7 +274,7 @@ harness.test('compat client and server events receive one response; server entit
     clearRegistrations()
 
     local clientCount = #clientEvents
-    addLocalEntity(70, { { label = 'Server', serverEvent = 'consumer:server', event = 'unused:client' } })
+    addLocalEntity(70, { { label = 'Server', serverEvent = 'consumer:server' } })
     Target._testRuntime.selectCandidates(resolve(70, point))
     local server = serverEvents[#serverEvents]
     harness.assertEqual(server.name, 'consumer:server')
@@ -277,7 +283,7 @@ harness.test('compat client and server events receive one response; server entit
     harness.assertEqual(server.args[1].entity, 700, 'network ID, never the local handle')
     assertHitCoords(server.args[1], point)
     harness.assertEqual(server.args[1].distance, 1)
-    harness.assertEqual(#clientEvents, clientCount, 'retain existing bridge action priority')
+    harness.assertEqual(#clientEvents, clientCount, 'serverEvent alone triggers no client event')
     clearRegistrations()
 
     addLocalEntity(71, { { label = 'Local only', serverEvent = 'consumer:server' } })
@@ -558,6 +564,267 @@ harness.test('ox_inventory addBoxZone: returns an id removeZone accepts (craftin
     local defaults = addBoxZone({ coords = vector3(0, 0, 0), options = { { label = 'x', onSelect = function() end } } })
     harness.assertTrue(Target.registrations[defaults] ~= nil, 'size and rotation default like ox_target')
     harness.assertTrue(removeZone(defaults))
+    clearRegistrations()
+end)
+
+-- ---------------------------------------------------------------------------
+-- Option fields: export, command, event/serverEvent order, response, items,
+-- offset, menus, zone names.
+-- ---------------------------------------------------------------------------
+local executed, exportCalls, heldItems = {}, {}, {}
+_G.ExecuteCommand = function(command) executed[#executed + 1] = command end
+_G.exports = setmetatable({
+    kora_inventory = { HasItem = function(_, name, amount)
+        return (heldItems[name] or 0) >= (amount or 1)
+    end },
+}, { __index = function(_, resource)
+    return setmetatable({}, { __index = function(_, fn)
+        return function(...) exportCalls[#exportCalls + 1] = { resource = resource, fn = fn, args = table.pack(...) } end
+    end })
+end })
+
+local function select1(entity, point)
+    Target._testRuntime.selectCandidates(resolve(entity, point or vector3(1, 0, 0)))
+end
+
+harness.test('export option calls exports[resource][export](nil, response) on the registering resource', function()
+    clearRegistrations()
+    invokingResource = 'consumer-res'
+    addLocalEntity(100, { { name = 'ex', label = 'Ex', icon = 'x', export = 'doThing', items = 'a', groups = 'g',
+        custom = 7 } })
+    invokingResource = 'ox-doorlock'
+    heldItems.a = 1
+    select1(100)
+    local call = exportCalls[#exportCalls]
+    harness.assertEqual(call.resource, 'consumer-res')
+    harness.assertEqual(call.fn, 'doThing')
+    harness.assertEqual(call.args.n, 2)
+    harness.assertEqual(call.args[1], nil, 'upstream passes nil as the first argument')
+    harness.assertEqual(call.args[2].entity, 100)
+    harness.assertEqual(call.args[2].name, 'ex')
+    harness.assertEqual(call.args[2].custom, 7, 'option fields flow through like upstream getResponse')
+    harness.assertEqual(call.args[2].icon, nil)
+    harness.assertEqual(call.args[2].items, nil)
+    harness.assertEqual(call.args[2].groups, nil)
+    harness.assertEqual(call.args[2].export, nil)
+    heldItems.a = nil
+    clearRegistrations()
+end)
+
+harness.test('command runs via ExecuteCommand; precedence is onSelect > export > event > serverEvent > command', function()
+    clearRegistrations()
+    addLocalEntity(101, { { label = 'Cmd', command = 'me waves' } })
+    select1(101)
+    harness.assertEqual(executed[#executed], 'me waves')
+    clearRegistrations()
+
+    local clientCount, serverCount, execCount, exportCount = #clientEvents, #serverEvents, #executed, #exportCalls
+    addLocalEntity(101, { { label = 'Both', event = 'e:client', serverEvent = 'e:server', command = 'nope' } })
+    select1(101)
+    harness.assertEqual(#clientEvents, clientCount + 1, 'event wins over serverEvent like upstream')
+    harness.assertEqual(#serverEvents, serverCount)
+    harness.assertEqual(#executed, execCount, 'command not run when event handled')
+    clearRegistrations()
+
+    invokingResource = 'consumer-res'
+    addLocalEntity(101, { { label = 'Exp', export = 'f', event = 'e:client2', command = 'nope' } })
+    invokingResource = 'ox-doorlock'
+    clientCount = #clientEvents
+    select1(101)
+    harness.assertEqual(#exportCalls, exportCount + 1, 'export wins over event')
+    harness.assertEqual(#clientEvents, clientCount)
+    clearRegistrations()
+end)
+
+harness.test('items / anyItem are checked through kora_inventory HasItem', function()
+    clearRegistrations()
+    local function visible(items, anyItem)
+        clock = clock + 1000 -- step past the HasItem cache
+        clearRegistrations()
+        addLocalEntity(110, { { label = 'I', items = items, anyItem = anyItem, onSelect = function() end } })
+        return #resolve(110, vector3(1, 0, 0)) == 1
+    end
+    heldItems = {}
+    harness.assertFalse(visible('lockpick'))
+    heldItems = { lockpick = 1 }
+    harness.assertTrue(visible('lockpick'))
+    harness.assertFalse(visible({ 'lockpick', 'screwdriver' }), 'array form requires all')
+    harness.assertTrue(visible({ 'lockpick', 'screwdriver' }, true), 'anyItem needs one')
+    heldItems = { lockpick = 1, screwdriver = 1 }
+    harness.assertTrue(visible({ 'lockpick', 'screwdriver' }))
+    heldItems = { money = 50 }
+    harness.assertTrue(visible({ money = 50 }))
+    harness.assertFalse(visible({ money = 51 }))
+    harness.assertFalse(visible({ money = 51, lockpick = 1 }, true))
+    harness.assertTrue(visible({ money = 50, lockpick = 1 }, true))
+    heldItems = {}
+    clearRegistrations()
+end)
+
+harness.test('offset / offsetSize / absoluteOffset gate on the aim point', function()
+    clearRegistrations()
+    _G.GetModelDimensions = function() return vector3(-1, -2, 0), vector3(1, 2, 2) end
+    _G.GetOffsetFromEntityInWorldCoords = function(_, x, y, z) return { x = 10 + x, y = y, z = z } end
+    local function visible(option)
+        clearRegistrations()
+        option.label, option.onSelect, option.distance = 'O', function() end, 20
+        addLocalEntity(120, { option })
+        return #resolve(120, { x = 11, y = 2, z = 2 }) == 1
+    end
+    -- relative (0.5,..) of dims: min + (max-min)*offset = (0, 0, 1) -> world (10,0,1); aim (11,2,2) is 2.45 away
+    harness.assertFalse(visible({ offset = vector3(0.5, 0.5, 0.5) }))
+    harness.assertTrue(visible({ offset = vector3(0.5, 0.5, 0.5), offsetSize = 3 }))
+    -- absolute offset (1,2,2) -> world (11,2,2): exact hit
+    harness.assertTrue(visible({ offset = vector3(1, 2, 2), absoluteOffset = true }))
+    harness.assertTrue(visible({ offset = vector3(1, 2, 2), offsetAbsolute = true }))
+    harness.assertFalse(visible({ offset = vector3(-1, 2, 2), absoluteOffset = true }))
+    -- zones ignore offset (upstream applies it to model/entity hits only)
+    clearRegistrations()
+    local oldSphere = Kora.zones.sphere
+    Kora.zones.sphere = function() return { remove = function() end, contains = function() return true end } end
+    getExport('addSphereZone')({ coords = vector3(11, 2, 2), radius = 1, options = {
+        { label = 'Z', distance = 20, offset = vector3(0, 0, 0), onSelect = function() end } } })
+    harness.assertEqual(#resolve(0, { x = 11, y = 2, z = 2 }), 1)
+    Kora.zones.sphere = oldSphere
+    _G.GetModelDimensions, _G.GetOffsetFromEntityInWorldCoords = nil, nil
+    clearRegistrations()
+end)
+
+harness.test('distance is honoured per option', function()
+    clearRegistrations()
+    addLocalEntity(130, { { label = 'Near', distance = 1, onSelect = function() end },
+        { label = 'Far', distance = 5, onSelect = function() end } })
+    harness.assertEqual(#resolve(130, vector3(3, 0, 0)), 1)
+    harness.assertEqual(#resolve(130, vector3(0.5, 0, 0)), 2)
+    clearRegistrations()
+end)
+
+harness.test('HasItem results are cached ~300ms and dropped on inventory events', function()
+    local calls = 0
+    local realHas = _G.exports.kora_inventory.HasItem
+    _G.exports.kora_inventory.HasItem = function(self, name, amount) calls = calls + 1; return realHas(self, name, amount) end
+    local function visible()
+        clearRegistrations()
+        addLocalEntity(115, { { label = 'C', items = 'cachey', onSelect = function() end } })
+        return #resolve(115, vector3(1, 0, 0)) == 1
+    end
+    clock = clock + 1000
+    heldItems = { cachey = 1 }
+    harness.assertTrue(visible())
+    local first = calls
+    harness.assertTrue(visible())
+    harness.assertEqual(calls, first, 'second pass inside 300 ms is served from cache')
+    heldItems = {}
+    harness.assertTrue(visible(), 'stale until expiry')
+    clock = clock + 301
+    harness.assertFalse(visible(), 'refreshed after 300 ms')
+    heldItems = { cachey = 1 }
+    harness.assertFalse(visible())
+    harness.assertTrue(netHandlers['qb-inventory:client:updateInventory'] ~= nil, 'inventory event handler registered')
+    netHandlers['qb-inventory:client:updateInventory']()
+    harness.assertTrue(visible(), 'inventory event invalidates cache')
+    _G.exports.kora_inventory.HasItem = realHas
+    heldItems = {}
+    clearRegistrations()
+end)
+
+harness.test('openMenu / menuName sub-menus with go-back', function()
+    clearRegistrations()
+    local now = 0
+    _G.GetGameTimer = function() return now end
+    local ran = {}
+    addLocalEntity(140, {
+        { name = 'root', label = 'Root', openMenu = 'sub', onSelect = function() ran[#ran + 1] = 'root' end },
+        { name = 'home', label = 'Home only', onSelect = function() ran[#ran + 1] = 'home' end },
+        { name = 'child', label = 'Child', menuName = 'sub', onSelect = function() ran[#ran + 1] = 'child' end },
+        { name = 'deep', label = 'Deep', menuName = 'sub', openMenu = 'sub2' },
+        { name = 'leaf', label = 'Leaf', menuName = 'sub2', onSelect = function() ran[#ran + 1] = 'leaf' end },
+    })
+    local function names()
+        Target._testRuntime.resetRuntimeState()
+        local out = {}
+        for _, c in ipairs(resolve(140, vector3(1, 0, 0))) do out[#out + 1] = c.option.name end
+        table.sort(out)
+        return table.concat(out, ',')
+    end
+    harness.assertEqual(names(), 'home,root')
+    Target._testRuntime.selectCandidates(resolve(140, vector3(1, 0, 0))) -- menu of 2: opens selector
+    selectedItems[1].action() -- first sorted by candidate order = root
+    harness.assertEqual(ran[#ran], 'root', 'the openMenu option still runs its handler')
+    Target._testRuntime.resetRuntimeState()
+    harness.assertEqual(names(), 'builtin:goback,child,deep', 'sub-menu shows its options plus go-back (stub entity is an object)')
+
+    -- go deeper, then back twice
+    for _, c in ipairs(resolve(140, vector3(1, 0, 0))) do
+        if c.option.name == 'deep' then c.option._onSelectContext(c) end
+    end
+    harness.assertEqual(names(), 'builtin:goback,leaf')
+    for _, c in ipairs(resolve(140, vector3(1, 0, 0))) do
+        if c.option.name == 'builtin:goback' then c.option._onSelectContext(c) end
+    end
+    harness.assertEqual(names(), 'builtin:goback,child,deep', 'go-back returns to the parent menu')
+    for _, c in ipairs(resolve(140, vector3(1, 0, 0))) do
+        if c.option.name == 'builtin:goback' then c.option._onSelectContext(c) end
+    end
+    harness.assertEqual(names(), 'home,root', 'go-back from the first level returns home and removes go-back')
+
+    -- timeout resets a forgotten sub-menu
+    for _, c in ipairs(resolve(140, vector3(1, 0, 0))) do
+        if c.option.name == 'root' then c.option._onSelectContext(c) end
+    end
+    harness.assertEqual(names(), 'builtin:goback,child,deep')
+    now = 20000
+    harness.assertEqual(names(), 'home,root', 'menu expires after kora_target:oxMenuTimeoutMs')
+    clearRegistrations()
+    _G.GetGameTimer = function() return clock end
+end)
+
+harness.test('zone sub-menus get their own go-back', function()
+    clearRegistrations()
+    _G.GetGameTimer = function() return clock end
+    local id = addBoxZone({ coords = vector3(0, 0, 0), size = vector3(2, 2, 2), options = {
+        { name = 'zroot', label = 'Z', openMenu = 'zsub', onSelect = function() end },
+        { name = 'zchild', label = 'ZC', menuName = 'zsub', onSelect = function() end },
+    } })
+    local function names()
+        local out = {}
+        for _, opt in ipairs(Target.registrations[id].options) do
+            if opt.canInteract(0, 1, nil, nil) then out[#out + 1] = opt.name end
+        end
+        table.sort(out)
+        return table.concat(out, ',')
+    end
+    harness.assertEqual(names(), 'zroot')
+    for _, opt in ipairs(Target.registrations[id].options) do
+        if opt.name == 'zroot' then opt._onSelectContext({ entity = 0, registration = Target.registrations[id] }) end
+    end
+    harness.assertEqual(names(), 'builtin:goback,zchild')
+    for _, opt in ipairs(Target.registrations[id].options) do
+        if opt.name == 'builtin:goback' then opt._onSelectContext({ entity = 0, registration = Target.registrations[id] }) end
+    end
+    harness.assertEqual(names(), 'zroot', 'go-back from a zone returns home')
+    removeZone(id)
+    clearRegistrations()
+end)
+
+harness.test('sphere and poly zones are removable by name', function()
+    clearRegistrations()
+    local oldSphere, oldPoly = Kora.zones.sphere, Kora.zones.poly
+    local removed = 0
+    local function handle() return { remove = function() removed = removed + 1 end, contains = function() return false end } end
+    Kora.zones.sphere, Kora.zones.poly = handle, handle
+    local s = getExport('addSphereZone')({ name = 'my-sphere', coords = vector3(0, 0, 0), radius = 1,
+        options = { { label = 'S', onSelect = function() end } } })
+    local p = getExport('addPolyZone')({ name = 'my-poly',
+        points = { vector3(0, 0, 0), vector3(1, 0, 0), vector3(1, 1, 0) }, thickness = 2,
+        options = { { label = 'P', onSelect = function() end } } })
+    harness.assertTrue(removeZone('my-sphere'))
+    harness.assertEqual(Target.registrations[s], nil)
+    harness.assertTrue(Target.registrations[p] ~= nil)
+    harness.assertTrue(removeZone('my-poly'))
+    harness.assertEqual(Target.registrations[p], nil)
+    harness.assertFalse(removeZone('my-poly'))
+    Kora.zones.sphere, Kora.zones.poly = oldSphere, oldPoly
     clearRegistrations()
 end)
 
