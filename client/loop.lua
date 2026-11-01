@@ -835,7 +835,7 @@ local function startTargeting()
     end)
 end
 
-Kora.keybind.add({
+local targetKeybind = {
     name = Config.target.keybind.command,
     description = Config.target.keybind.label,
     defaultMapper = 'keyboard',
@@ -885,7 +885,14 @@ Kora.keybind.add({
         Target.active = false
         selectCandidates(candidates)
     end,
-})
+}
+Kora.keybind.add(targetKeybind)
+
+-- Stock qb-target names its hold commands +playerTarget/-playerTarget; scripts and keybind
+-- configs that reference them keep working. Registered as plain commands (no key mapping),
+-- so the player's own binding stays on Config.target.keybind.
+RegisterCommand('+playerTarget', function() targetKeybind.onPressed() end, false)
+RegisterCommand('-playerTarget', function() targetKeybind.onReleased() end, false)
 
 -- Manual recovery if targeting ever sticks (e.g. after Alt+Tab).
 do

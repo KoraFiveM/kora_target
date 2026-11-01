@@ -888,4 +888,13 @@ harness.test('recovery defaults cover focus loss, Alt fallback and menu idle', f
     harness.assertTrue(recovery.nuiListener, 'NUI listener on')
 end)
 
+harness.test('+playerTarget/-playerTarget alias the target keybind press and release', function()
+    harness.assertTrue(type(commands['+playerTarget']) == 'function', '+playerTarget must be registered')
+    harness.assertTrue(type(commands['-playerTarget']) == 'function', '-playerTarget must be registered')
+    commands['+playerTarget']()
+    harness.assertTrue(Target.active, '+playerTarget must start targeting like the keybind press')
+    commands['-playerTarget']()
+    harness.assertFalse(Target.active, '-playerTarget must end targeting like the keybind release')
+end)
+
 harness.report('qbtarget runtime')

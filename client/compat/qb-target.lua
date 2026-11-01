@@ -62,8 +62,16 @@ function Target._playerData()
     return coreAvailable, PlayerData
 end
 
-RegisterNetEvent('QBCore:Client:OnPlayerLoaded', refreshPlayerData)
-RegisterNetEvent('QBCore:Client:OnPlayerUnload', function() PlayerData = nil end)
+local spawnPendingPeds, deleteSpawnedPeds
+
+RegisterNetEvent('QBCore:Client:OnPlayerLoaded', function()
+    refreshPlayerData()
+    spawnPendingPeds()
+end)
+RegisterNetEvent('QBCore:Client:OnPlayerUnload', function()
+    PlayerData = nil
+    deleteSpawnedPeds()
+end)
 RegisterNetEvent('QBCore:Client:OnPlayerUpdated', function(key, val)
     if not PlayerData then return end
     if key == 'job' then PlayerData.job = val
@@ -978,6 +986,21 @@ local function addSpawnedPedConfig(data, owner)
     end
 end
 
+spawnPendingPeds = function()
+    local pending = {}
+    for configIndex, data in pairs(spawnedPedConfigs) do
+        if not data.currentpednumber or data.currentpednumber == 0 then pending[#pending + 1] = configIndex end
+    end
+    table.sort(pending)
+    for _, configIndex in ipairs(pending) do
+        local data = spawnedPedConfigs[configIndex]
+        local ok, err = pcall(spawnOnePed, data, spawnedPedOwners[configIndex], configIndex)
+        if not ok then
+            print(('^3[kora_target]^7 pending SpawnPed config %d failed: %s'):format(configIndex, tostring(err)))
+        end
+    end
+end
+
 local function SpawnPed(data)
     assert(type(data) == 'table', 'SpawnPed requires a ped config or array of ped configs.')
     local owner = GetInvokingResource() or GetCurrentResourceName()
@@ -1207,12 +1230,18 @@ local function UpdatePedsData(index, data)
     return true
 end
 
-local function DeletePeds()
+deleteSpawnedPeds = function()
     local peds = {}
     for ped in pairs(spawnedPedRecords) do peds[#peds + 1] = ped end
     for _, ped in ipairs(peds) do removeSpawnedPedEntity(ped) end
     return true
 end
+local DeletePeds = deleteSpawnedPeds
+
+CreateThread(function()
+    local state = LocalPlayer and LocalPlayer.state
+    if state and state.isLoggedIn then spawnPendingPeds() end
+end)
 
 for exportName, func in pairs({
     AddBoxZone = AddBoxZone,
