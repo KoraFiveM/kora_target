@@ -112,7 +112,7 @@ Config.target = {
     freezeOnMenu = false,
     lockCameraOnMenu = false,      -- also lock the gameplay camera (look controls) while the menu is open
     closeMenuOutOfRange = true,    -- close the open menu when its target moves or the player walks out of range
-    showCloseHint = true,          -- show a short "press to close" help message when the menu opens
+    showCloseHint = false,         -- show the GTA help message "Press Escape to close" for a few seconds when the multiple-option menu opens; false (default) shows nothing. Escape still closes the menu and pause-menu suppression is unaffected
     suppressPauseOnClose = true,   -- Escape closes the option menu without also opening the GTA pause menu (pause controls are blocked while the menu is open and briefly after it closes). Set false to leave pause-key handling alone.
     pauseSuppressMs = 250,         -- how long (milliseconds, 0-2000) the pause controls stay blocked after the menu closes; only used when suppressPauseOnClose is true
 
@@ -198,7 +198,7 @@ if Kora and Kora.config and Kora.config.adopt then
         ['target.freezeOnMenu'] = 'Legacy: used as freeze (on) or allow (off) only when Movement while option menu is open was never set.',
         ['target.lockCameraOnMenu'] = 'Lock the gameplay camera while the multiple-option menu is open.',
         ['target.closeMenuOutOfRange'] = 'Close the multiple-option menu when its target is no longer within reach.',
-        ['target.showCloseHint'] = 'Show a short message explaining how to close the multiple-option menu.',
+        ['target.showCloseHint'] = 'Show the GTA help message explaining how to close the multiple-option menu for a few seconds when it opens. Off by default; Escape still closes the menu either way.',
         ['target.suppressPauseOnClose'] = 'Stop Escape from also opening the game pause menu when it closes the multiple-option menu. The pause keys are blocked while the menu is open and briefly after it closes.',
         ['target.pauseSuppressMs'] = 'How long the pause keys stay blocked after the multiple-option menu closes. Only used when the pause menu block is on.',
         ['target.sprites.allowPerZoneOverride'] = 'Allow a zone that asks for its own icon to show it even when location icons are turned off globally.',

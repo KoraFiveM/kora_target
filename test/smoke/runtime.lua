@@ -309,7 +309,14 @@ harness.test('freezeOnMenu=false (the default) never freezes the ped, and true d
     harness.assertTrue(frozenEntities[1], 'freezeOnMenu=true restores the freeze')
     runtime.closeTargetMenu()
     harness.assertTrue(not frozenEntities[1], 'closing the menu always unfreezes')
-    harness.assertTrue(helpMessages > 0 and helpCleared > 0, 'close hint is shown and cleared with the menu')
+    harness.assertEqual(helpMessages, 0, 'showCloseHint defaults to false, so no help message is shown')
+    harness.assertEqual(Config.target.showCloseHint, false, 'the shipped default hides the close hint')
+
+    Config.target.showCloseHint = true
+    runtime.selectCandidates(candidates)
+    runtime.closeTargetMenu()
+    Config.target.showCloseHint = false
+    harness.assertTrue(helpMessages > 0 and helpCleared > 0, 'showCloseHint=true shows the hint and clears it with the menu')
 end)
 
 harness.test('menu range check fails once every target is out of reach', function()
