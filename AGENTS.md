@@ -87,7 +87,7 @@ The **qb-target compat shim** (`client/compat/qb-target.lua`) is different: it n
 
 This was a confirmed, security-relevant compat bug before the fix: `jobType` wasn't even a recognized field (silently dropped, no warning at all — unlike `job`/`gang`/`item`, which at least warned), so every `Config.UseTarget = true` police interaction zone keyed on `jobType = 'leo'` was reachable by any player.
 
-The ox_target compat (`client/compat/ox-target.lua`) is unaffected — real ox_target's own filtering model is `groups`-based against ox_core, a different framework this repo also doesn't run; that stays unenforced by design, same as `docs.md` describes.
+The ox_target compat (`client/compat/ox-target.lua`) enforces `groups` (string / array / `{name=minGrade}`) against the same kora_core PlayerData via `Target._playerData()` (job and gang names, convar `kora_target:oxGroups 0` to disable); `items` stays unenforced. Its `canInteract` receives ox_target's `(entity, distance, coords, name, bone)` (the resolver passes the aim point as a 4th argument; `bone` is always nil), `removeModel`/`removeLocalEntity` accept option names, and options may be one bare table. `stubs/ox_target/` is the manifest-only `[compat]/ox_target` placeholder (see its README).
 
 ## Server actions
 The qb-target `SpawnPed` compatibility helper uses kora_lib's bounded
