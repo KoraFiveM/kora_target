@@ -95,7 +95,15 @@ Config.target = {
         name = 'info',
         width = 0.015,
         height = 0.02,
+        -- Fallback colour, also used when useThemeColour is false or kora_theme
+        -- is not started.
         colour = { r = 30, g = 144, b = 255, a = 220 },
+        -- Tint the icon with kora_theme's primary colour (alpha still comes from
+        -- colour.a). Falls back to `colour` when kora_theme is unavailable.
+        useThemeColour = true,
+        -- Hide the icons while the target key is held: the player is already
+        -- aiming, so the hints are only useful before that.
+        hideWhileTargeting = true,
     },
 
     -- No idle thread when the key is up. See client/loop.lua's +/- handlers.
@@ -129,6 +137,8 @@ if Kora and Kora.config and Kora.config.adopt then
     Config.target.sprites.colour.g = Kora.config.integer(Config.target.sprites.colour.g, { label = 'Icon green', advanced = false, min = 0, max = 255 })
     Config.target.sprites.colour.b = Kora.config.integer(Config.target.sprites.colour.b, { label = 'Icon blue', advanced = false, min = 0, max = 255 })
     Config.target.sprites.colour.a = Kora.config.integer(Config.target.sprites.colour.a, { label = 'Icon opacity', advanced = false, min = 0, max = 255 })
+    Config.target.sprites.useThemeColour = Kora.config.boolean(Config.target.sprites.useThemeColour, { label = 'Tint icons with the theme colour', advanced = false })
+    Config.target.sprites.hideWhileTargeting = Kora.config.boolean(Config.target.sprites.hideWhileTargeting, { label = 'Hide icons while targeting', advanced = false })
     Config.target.keybind.command = Kora.config.string(Config.target.keybind.command, { label = 'Target command', advanced = true })
     Config.target.keybind.defaultKey = Kora.config.string(Config.target.keybind.defaultKey, { label = 'Default target key', advanced = false })
     Config.target.keybind.label = Kora.config.string(Config.target.keybind.label, { label = 'Target key label', advanced = false })

@@ -53,15 +53,42 @@ local function hasSpriteEnabledZone()
     return settings.allowPerZoneOverride == true and Target.hasSpriteOverrideZone()
 end
 
+-- Primary colour from kora_theme as r, g, b (0-255), or nil when the theme
+-- resource is missing or returns something unusable. Cached: the theme only
+-- changes on resource restart, and a failed lookup is retried at most every
+-- 10 seconds so a late-starting kora_theme is still picked up.
+local themeRGB, themeCheckedAt
+local function themeColour()
+    if themeRGB then return themeRGB end
+    local now = GetGameTimer()
+    if themeCheckedAt and now - themeCheckedAt < 10000 then return nil end
+    themeCheckedAt = now
+    if GetResourceState('kora_theme') ~= 'started' then return nil end
+    local ok, hex = pcall(function() return exports.kora_theme:getPrimaryColor() end)
+    if not ok or type(hex) ~= 'string' then return nil end
+    local r, g, b = hex:match('^#?(%x%x)(%x%x)(%x%x)$')
+    if not r then return nil end
+    themeRGB = { tonumber(r, 16), tonumber(g, 16), tonumber(b, 16) }
+    return themeRGB
+end
+
 local function drawZoneSprites()
     local settings = Config.target.sprites
     if not settings or not hasSpriteEnabledZone() then return false end
     if type(settings.dict) ~= 'string' or type(settings.name) ~= 'string' then return false end
+    -- Hints are for finding interaction points; once the player holds the
+    -- target key they are already aiming. Cheap flag read, no extra work.
+    if settings.hideWhileTargeting and Target.active then return false end
     if not ensureTexture(settings.dict) then return false end
 
     local playerCoords = GetEntityCoords(PlayerPedId())
     local offset = settings.offset or {}
     local colour = settings.colour or {}
+    local cr, cg, cb = colour.r or 255, colour.g or 255, colour.b or 255
+    if settings.useThemeColour ~= false then
+        local theme = themeColour()
+        if theme then cr, cg, cb = theme[1], theme[2], theme[3] end
+    end
     local drewAny = false
 
     -- Broad phase first: a server with thousands of registered zones would
@@ -82,7 +109,7 @@ local function drawZoneSprites()
             if visible then
                 DrawSprite(settings.dict, settings.name, screenX, screenY,
                     settings.width or 0.015, settings.height or 0.02, 0.0,
-                    colour.r or 255, colour.g or 255, colour.b or 255, colour.a or 255)
+                    cr, cg, cb, colour.a or 255)
                 drewAny = true
             end
         end

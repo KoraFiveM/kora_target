@@ -254,8 +254,9 @@ released), `staticMissRefresh` (500ms for motionless misses), and
 `canInteractFailureCacheMs` is the 250ms retry cooldown for failed checks;
 successful checks remain uncached by default. `debug` (global zone
 outline) and `diagnostics` (per-hold resolver metrics) both default to
-`false`. `sprites` controls the enabled-by-default, distance-culled zone
-location icons; `demo` (built-in global ped/vehicle demo targets) defaults to
+`false`. `sprites` controls the distance-culled zone location icons (off by
+default; see `sprites.enabled`, `drawDistance`, `useThemeColour`,
+`hideWhileTargeting`); `demo` (built-in global ped/vehicle demo targets) defaults to
 `false`.
 
 ## Related resources

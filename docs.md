@@ -104,7 +104,13 @@ individually. `Config.target.sprites` draws a compact `shared/info` world
 sprite at each coordinate-zone anchor so players can see interactable
 locations before holding Alt; set `drawSprite = false` on one zone to hide its
 icon. The sprite renderer is distance-culled and does not scan entities, so it
-does not add work to the target raycast loop. Entity/model/global targets do
+does not add work to the target raycast loop. It is **off by default**:
+set `Config.target.sprites.enabled = true` (and tune `drawDistance`, default
+20.0 m) to turn it on, or set `drawSprite = true` on single zones. The icon
+is tinted with kora_theme's primary colour (`useThemeColour`, falling back to
+`sprites.colour`), and is hidden while the target key is held
+(`hideWhileTargeting`). Zones created by other resources (shops, etc.) get an
+icon only if they are registered as coordinate zones. Entity/model/global targets do
 not get static sprites because they do not have one fixed world location.
 
 ### `removeZone(id)`
