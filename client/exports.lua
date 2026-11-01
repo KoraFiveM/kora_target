@@ -1,8 +1,4 @@
--- One screen, one line per public function -- kept explicit (not generated,
--- unlike kora_lib's own build/finalise.lua) so it's directly auditable against
--- the qb-target/ox_target mapping tables in ../docs.md and the qb-target/
--- ox_target shim resources, both of which are hand-written against this
--- exact list.
+-- Explicit list (not generated like kora_lib finalise.lua) so it can be audited against the compat mapping tables.
 exports('addEntity', Target.addEntity)
 exports('removeEntity', Target.removeEntity)
 exports('addModel', Target.addModel)
