@@ -68,7 +68,7 @@ end
 
 local function drawZoneSprites()
     local settings = Config.target.sprites
-    if not settings or not hasSpriteEnabledZone() then return false end
+    if not hasSpriteEnabledZone() then return false end
     if type(settings.dict) ~= 'string' or type(settings.name) ~= 'string' then return false end
     -- Hints are for finding interaction points; once the player holds the
     -- target key they are already aiming. Cheap flag read, no extra work.

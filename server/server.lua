@@ -36,7 +36,7 @@ end)
 ---Registers a server-side handler runnable via the client's
 ---Target.runServerAction(name, entity, clientDistance, ...). The client value
 ---is compatibility-only; the authoritative maximum is captured here.
----runs after the entity (if any) has already been resolved from its network
+---The handler runs after the entity (if any) has already been resolved from its network
 ---id and distance-checked against the calling player.
 ---@param name string
 ---@param handler fun(src: number, entity: number?, ...: any): any
