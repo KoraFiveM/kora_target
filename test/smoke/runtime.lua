@@ -556,11 +556,9 @@ harness.test('qbtarget_debug command toggles every target zone through Kora.zone
     Target.debugEnabled = false
 end)
 
--- ---------------------------------------------------------------------------
 -- Resolver broad phase. Every test below starts from a clean zone fixture:
 -- the tests above leave zones registered, and these assert on exactly which
 -- `contains` predicates the resolver reaches.
--- ---------------------------------------------------------------------------
 local function clearZones()
     local ids = {}
     for id in pairs(Target.byZone) do ids[#ids + 1] = id end

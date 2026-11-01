@@ -7,9 +7,7 @@ local currentRaycastEntity
 local menuPed, menuPedWasFrozen
 local menuHintShown = false
 
--- Runtime-only resolver state. This cache never decides authority; it simply
--- avoids resolving the same world/registration combination more often than a
--- player can perceive it.
+-- Runtime-only cache; never authoritative.
 local entityRegistrationCache = { entity = nil, model = nil, entityType = nil, revision = nil, registrations = {} }
 local canInteractCache = {}
 local emptyRegistrations = {}
@@ -181,10 +179,7 @@ function Target._cancelCurrentTargeting()
 end
 
 local function classifyEntity(entity)
-    -- GetEntityType returns 0 for a handle that no longer resolves. This is a
-    -- stronger preflight than treating "not a ped and not a vehicle" as an
-    -- object: that old fallback also classified invalid handles as objects,
-    -- allowing them to reach GetEntityModel and fault in the native invoker.
+    -- GetEntityType is 0 for a handle that no longer resolves; treating it as an object would let it reach GetEntityModel and fault.
     local ok, entityType = pcall(GetEntityType, entity)
     if not ok or entityType == 0 then return nil end
     if entityType == 1 then
@@ -243,8 +238,6 @@ end
 local FAILED_MODEL_TTL_MS = 1000
 local failedModelEntity, failedModelUntil = nil, 0
 
--- Registration mutations increment Target.registrationRevision in state.lua,
--- making additions/removals visible without waiting for the player to aim away.
 local function entityRegistrations(entity)
     local existsOk, exists = pcall(DoesEntityExist, entity)
     if not existsOk or not exists then return emptyRegistrations end
@@ -264,10 +257,7 @@ local function entityRegistrations(entity)
         failedModelEntity, failedModelUntil = entity, GetGameTimer() + FAILED_MODEL_TTL_MS
         return emptyRegistrations
     end
-    -- Compared field by field instead of against a formatted "entity:model:type"
-    -- key. The key was rebuilt on every tick of every hold purely to be thrown
-    -- away on a cache hit; three equality tests answer the same question with
-    -- no allocation.
+    -- Field-wise compare instead of a formatted key string: no per-tick allocation.
     local revision = Target.registrationRevision or 0
     if entityRegistrationCache.entity == entity
         and entityRegistrationCache.model == model
@@ -287,27 +277,9 @@ local function entityRegistrations(entity)
     return registrations
 end
 
--- Zone candidates are matched against where the player is AIMING (the
--- raycast collision point), not where the player's own ped is standing --
--- deliberately not Kora.zones.getInside(), which answers "is the ped inside
--- this zone" and would require walking into a zone to target it.
---
--- This used to be a plain linear scan over every zone-kind registration,
--- calling each one's `contains` predicate. That is the resolver's worst
--- scaling behaviour on a real server: a qb-target-compatible install
--- registers hundreds-to-thousands of zones, and this ran 20x/second for the
--- whole hold. Two exact filters now sit in front of it, neither of which can
--- change which zones match:
---
---  1. Every zone candidate anchors on the raycast hit itself, so the
---     ped->anchor distance appendCandidates tests is IDENTICAL for all of
---     them. One comparison against the largest interact distance any zone
---     option uses therefore rejects the whole pass -- aiming across a room at
---     something 8m away can never produce a 2.5m zone candidate.
---  2. Target.zonesNear (client/state.lua) is an AABB grid keyed on the aim
---     point, so only zones whose bounding box actually contains that point
---     reach their real `contains` predicate. Zones with an underivable extent
---     (the qb-target ComboZone/EntityZone bridges) stay in the scan.
+-- Zones match against the aim point (raycast hit), not the ped's position, so standing inside isn't required.
+-- Two exact filters precede the contains scan: one reach comparison (every zone anchors on the hit, so the
+-- distance is identical for all), then the Target.zonesNear AABB grid. Zones with underivable extents stay in the scan.
 ---@param point table Raycast hit coordinates.
 ---@param pedCoords table? Player position; omit to skip filter 1.
 local function zoneRegistrationsAt(point, pedCoords, aimedEntity)
@@ -412,10 +384,7 @@ local function resolveCandidates(hit, entity, hitCoords, now, pedCoords)
     -- Stamped here rather than at the call site so aimIsStatic's staleness cap
     -- is anchored to the resolve that actually happened.
     lastResolveAt = now
-    -- The bone cache is scoped to one resolver pass (a bone moves between
-    -- passes) but reused across them: a fresh table per tick was garbage for
-    -- the whole hold, and clearing the handful of keys it holds is cheaper
-    -- than allocating.
+    -- Bone cache is per-pass but the table is reused; clearing beats reallocating.
     for cachedEntity in pairs(boneCache) do boneCache[cachedEntity] = nil end
     pedCoords = pedCoords or GetEntityCoords(PlayerPedId())
     local candidates, oldCount, nearestIndex = currentCandidates, #currentCandidates, nil
@@ -442,16 +411,8 @@ local function resolveCandidates(hit, entity, hitCoords, now, pedCoords)
     return candidates
 end
 
--- Mirrors ox_target's two-pass idea: the broad mask sees normal world
--- geometry, then an entity-focused mask gets a chance when that first cast
--- reports no entity. The closer hit always wins, so this never targets through
--- a nearer obstruction.
---
--- The broad probe runs every real scan. The entity-only fallback is rate
--- limited and only starts after a broad result without an entity, trading an
--- occasional extra settle frame for substantially fewer shape tests while a
--- held crosshair points at ordinary world geometry. Both casts share one
--- camera/ped snapshot, so they trace the same ray without duplicate natives.
+-- Mirrors ox_target: broad mask first, then an entity-focused mask when that reports no entity. The closer hit wins.
+-- The fallback is rate limited and only starts after a broad miss on entities; both casts share one camera/ped snapshot.
 local lastEntityProbeAt = -math.huge
 local aimState = { destination = {} }
 
@@ -501,14 +462,8 @@ local function updateHoveringState(candidates)
     Target.hovering = { kind = top.registration.kind, id = top.registration.id, entity = top.entity, zoneId = top.registration.kind == 'zone' and top.registration.id or nil, option = top.option, optionCount = #candidates }
 end
 
--- kora_lib owns the transparent NUI root. Targeting remains game-input driven;
--- this is only a compact visual snapshot, never a focus-taking UI.
--- The snapshot is compared field by field against what was last sent, rather
--- than against a formatted key string. The old key was rebuilt (and the label
--- with it) on every tick of every hold purely to be compared and dropped;
--- the identity of the top candidate's registration, entity and option table,
--- plus the option count, decide the same thing exactly and allocate nothing.
--- The label is only formatted once something has actually changed.
+-- kora_lib owns the transparent NUI root; this is only a compact snapshot, never focus-taking.
+-- Compared field by field against the last sent snapshot (no formatted key); the label is formatted only on change.
 syncTargetHud = function(active, candidates)
     if not active then
         if not hudActive then return end
@@ -538,18 +493,8 @@ syncTargetHud = function(active, candidates)
     })
 end
 
--- The single most expensive thing a resolver tick does is fire two shape
--- tests and yield a frame waiting for the engine to settle them. None of that
--- can tell us anything new while the camera and the player are both perfectly
--- still: the ray is the same ray, so it lands on the same point.
---
--- "Perfectly still" is deliberately exact equality, not an epsilon. Any real
--- aim adjustment -- the smallest mouse movement, a controller stick, the ped
--- drifting -- changes these floats and resolves immediately, so this can only
--- ever engage while the player is genuinely holding still. What it cannot see
--- is the world moving under a static crosshair (a ped walking into it), which
--- is why it is capped. Empty misses use the longer staticMissRefresh; aimed
--- entities and options retain the more responsive staticRefresh.
+-- Reuses the previous resolve while camera and ped are exactly still (no epsilon: any real aim change resolves immediately).
+-- Cannot see the world moving under a static crosshair, hence the refresh caps; empty misses use staticMissRefresh.
 ---@return boolean skip True when this tick can reuse the previous resolve.
 local function aimIsStatic(now, snapshot)
     local hasAimTarget = currentCandidates[1] ~= nil
@@ -762,13 +707,8 @@ Kora.keybind.add({
     end,
 })
 
--- Config.target.debug/zoneDebugEnabled (client/state.lua) only ever get read
--- once, at zone registration time -- flipping the config afterward does
--- nothing to zones already created. This command is a runtime override layered
--- on top via kora_lib's own Kora.zones.setDebug(nil, ...) (added specifically for
--- this), not a replacement for the config default: it lets a developer outline
--- every already-registered target zone live, without editing config.lua and
--- restarting the resource. `[on|off]`, or no argument to toggle.
+-- Runtime override via Kora.zones.setDebug(nil, ...) for zones already created; config is only read at registration.
+-- `[on|off]`, or no argument to toggle.
 RegisterCommand('qbtarget_debug', function(_, args)
     local arg = args[1] and tostring(args[1]):lower() or nil
     local enabled

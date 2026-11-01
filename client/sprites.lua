@@ -35,16 +35,10 @@ local function ensureTexture(dict)
     return HasStreamedTextureDictLoaded(dict)
 end
 
--- Reused across frames: this loop runs at frame cadence whenever a sprite is
--- on screen, and a fresh candidate array per frame is pure garbage-collector
--- pressure for no benefit.
+-- Reused across frames to avoid per-frame garbage.
 local nearbyZones = {}
 
--- Checked twice per iteration by the worker below (loop condition + restart
--- guard), at frame cadence while anything is drawing, so this must not be a
--- registry walk. client/state.lua keeps the count as zones are registered and
--- destroyed; drawSprite/spriteCoords are fixed at registration time and never
--- mutate afterwards, so a counter can't drift out of sync with a walk.
+-- Checked twice per iteration at frame cadence, so it is a counter maintained by client/state.lua, not a registry walk.
 local function hasSpriteEnabledZone()
     local settings = Config.target.sprites
     if not settings then return false end

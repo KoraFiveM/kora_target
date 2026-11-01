@@ -1,26 +1,12 @@
--- Drop-in compatibility bridge: translates the real, public qb-target API
--- into calls against Target.* directly (same resource -- no exports.kora_target:
--- round trip needed). Scripts written against exports['qb-target']:... keep
--- working unmodified even though this resource is literally named
--- "qbtarget", not "qb-target" -- see provideExport below.
---
--- The compatibility contracts in this file are audited against current
--- qbcore-framework/qb-target, including label-addressed mutation, PolyZone
--- object inputs, moving EntityZone containment, raycast return order, and the
--- distinct AllowTargeting/DisableTarget semantics.
+-- Drop-in bridge translating the public qb-target API onto Target.* directly (same resource, no exports round trip).
+-- Audited against current qbcore-framework/qb-target: label-addressed mutation, PolyZone object inputs,
+-- moving EntityZone containment, raycast return order, AllowTargeting/DisableTarget semantics.
 
 Target = Target or {}
 
--- `exports('name', fn)` only ever wires up the event FiveM's own export
--- resolution queries for THIS resource's real name (GetCurrentResourceName())
--- -- `provide 'qb-target'` in fxmanifest.lua only satisfies OTHER resources'
--- `dependency 'qb-target'` checks, it does NOT make exports['qb-target']:Fn()
--- resolve here. That resolution is, under the hood, itself just an event:
--- exports('name', fn) is sugar for registering
--- `__cfx_export_<resource>_<name>` with a callback that hands `fn` to the
--- caller-supplied setter. Registering that same event under the STRING
--- "qb-target" instead of this resource's real name is what actually makes
--- exports['qb-target']:Fn() reach code running here.
+-- `exports('name', fn)` only wires the event for THIS resource's real name; `provide 'qb-target'` only satisfies
+-- other resources' dependency checks. Registering the same export event under the string "qb-target"
+-- is what makes exports['qb-target']:Fn() reach code running here.
 local provideExport = Kora.compat.provideExport
 
 -- A callback passed through an FXServer export boundary is represented as a
@@ -53,13 +39,9 @@ local function dispatchLegacy(option, entity)
     end
 end
 
--- job/gang/item/jobType enforcement -- kora_target's own native resolver
--- deliberately never interprets these fields (framework-agnostic by design,
--- see ../../docs.md's "Opaque fields" section); this is the compat SHIM's
--- job, done here rather than in kora_target's core. Read kora_core directly, while
--- retaining the optional-framework behavior and legacy zero-based grades.
--- Semantics ported verbatim from real qb-target's JobCheck/JobTypeCheck/
--- GangCheck/CitizenCheck (client.lua's "QBCore init" CreateThread).
+-- job/gang/item/jobType enforcement lives in this shim, not kora_target's framework-agnostic core
+-- (see ../../docs.md "Opaque fields"). Reads kora_core directly, keeping legacy zero-based grades.
+-- Semantics ported from real qb-target's JobCheck/JobTypeCheck/GangCheck/CitizenCheck.
 local coreAvailable, PlayerData
 
 local function refreshPlayerData()
@@ -82,9 +64,6 @@ end
 
 RegisterNetEvent('QBCore:Client:OnPlayerLoaded', refreshPlayerData)
 RegisterNetEvent('QBCore:Client:OnPlayerUnload', function() PlayerData = nil end)
--- Real qb-target itself listens for this exact event the same way to keep its
--- own PlayerData in sync -- same reasoning modules/jobs/server.lua now fires
--- it (see that file's comment) for every legacy job/gang consumer.
 RegisterNetEvent('QBCore:Client:OnPlayerUpdated', function(key, val)
     if not PlayerData then return end
     if key == 'job' then PlayerData.job = val
@@ -122,11 +101,8 @@ local function citizenCheck(citizenid)
     return citizenid == PlayerData.citizenid
 end
 
--- Wraps a translated option's canInteract with the enforcement chain above --
--- ALL supplied filters must pass, exactly like real qb-target's CheckOptions,
--- before falling through to the option's own canInteract (if any). If QBCore
--- never became available at all, every filter check is skipped (never denies)
--- so the option still shows -- same graceful, warned degradation as before.
+-- Wraps a translated option's canInteract with the enforcement chain: ALL supplied filters must pass
+-- (like real qb-target's CheckOptions) before the option's own canInteract. Without QBCore, filters are skipped.
 local function makeCanInteract(option)
     local hasFilter = option.job or option.excludejob or option.jobType or option.excludejobType
         or option.gang or option.excludegang or option.item or option.citizenid
@@ -156,9 +132,6 @@ local function makeCanInteract(option)
     end
 end
 
--- Translates qb-target's option shape ({type?, event?, icon, label, action?,
--- canInteract?, item?, job?, gang?, jobType?, distance?}) into kora_target's own
--- QBTargetOption shape.
 local function translateOptions(options)
     assert(type(options) == 'table', 'qb-target target options must be a table.')
 
@@ -395,12 +368,8 @@ local function trackPolyZoneObject(name, kind, zone, targetOptions, distance, sp
     return zone
 end
 
--- Shared translation helpers, factored out of AddBoxZone/AddCircleZone/
--- AddPolyZone below so AddComboZone (a name-less, options-sharing group of
--- sub-zones) can reuse the exact same qb-target->kora_target shape logic
--- instead of duplicating it. These do NOT touch zonesByName -- only the
--- public Add*Zone wrappers below do that, since a combo zone's bookkeeping
--- differs (one name maps to several ids, see AddComboZone).
+-- Shared translation helpers so AddComboZone can reuse the box/circle/poly shape logic. They do NOT touch
+-- zonesByName; only the public Add*Zone wrappers do.
 -- Broad-phase bounds for the PolyZone-object path (trackPolyZoneObject).
 -- Derived from the CALLER'S OWN arguments rather than read back off the
 -- constructed PolyZone object: PolyZone's `scale`/`offset` grow a box beyond
@@ -1096,8 +1065,6 @@ local function RaycastCamera(flag, playerCoords)
     return coords, distance, entityHit, entityType
 end
 
--- AllowTargeting(state): real qb-target's usual enable/disable export --
--- state == true enables targeting, a direct passthrough to Target.setEnabled.
 local DisableNUI
 
 local function AllowTargeting(state)

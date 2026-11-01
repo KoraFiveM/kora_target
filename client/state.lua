@@ -61,12 +61,7 @@ end
 -- shared through kora_lib so every compatibility boundary recognizes the same shapes.
 local isCallable = Kora.util.isCallable
 
--- A "coords-like" value: a table with numeric x/y/z, satisfied by both a
--- real vector3 and a plain {x=, y=, z=} table (both are accepted throughout
--- this file). Used to validate addBoxZone/addSphereZone/addPolyZone's
--- coords/size/points BEFORE handing them to Kora.zones.* -- unlike `options`,
--- these were previously passed through unchecked, so a malformed call only
--- failed with an opaque error from deep inside kora_lib.
+-- Accepts a real vector3 as well as a plain {x=,y=,z=} table.
 local function isCoordsLike(x)
     -- Deliberately does NOT gate on type(x) == "table" first: FiveM natives
     -- like GetEntityCoords return vector3 values whose Lua type() is
@@ -79,9 +74,6 @@ local function isCoordsLike(x)
     return ok and isNum
 end
 
--- kora_lib owns the actual debug shape rendering. Keeping the choice here means
--- callers can still opt one zone into debugging, while Config.target.debug is
--- a convenient server-wide override when laying out or diagnosing zones.
 local function zoneDebugEnabled(zoneOptions)
     return Config.target.debug == true or zoneOptions.debug == true
 end
@@ -90,9 +82,7 @@ local function copyCoords(coords)
     return { x = coords.x, y = coords.y, z = coords.z }
 end
 
--- A poly has no supplied centre. Its mean vertex position is a stable and
--- intuitive icon anchor even for concave shapes; it is only a visual hint and
--- does not participate in the zone's actual containment test.
+-- Visual icon anchor only; not used in containment.
 local function polySpriteCoords(points)
     local x, y, z = 0.0, 0.0, 0.0
     for _, point in ipairs(points) do
@@ -105,10 +95,6 @@ end
 
 local GLOBAL_TYPES = { ped = true, vehicle = true, object = true, player = true }
 
----A bare entity/model/bone value is wrapped as a one-element array; an
----already-array-shaped value (multiple entities/models/bones in one call) is
----used as-is. Entity handles and model hashes/names are never themselves
----tables, so "is it a table" is enough to tell the two apart.
 ---@param value any
 ---@return table
 local function toArray(value)
@@ -190,39 +176,13 @@ local function syncSpriteLoop()
     if Target._syncSpriteLoop then Target._syncSpriteLoop() end
 end
 
--- ---------------------------------------------------------------------------
--- Zone broad phase
---
--- Every zone-kind registration used to be tested with its own
--- `zoneHandle.contains(hitCoords)` on every resolver tick (client/loop.lua).
--- That is fine for a handful of zones and quadratic-feeling on a real server:
--- a qb-target-compatible install routinely registers hundreds-to-thousands of
--- zones (every shop, job point, garage and stash), and 20Hz x N point-in-poly
--- tests while Alt is held is the single largest cost the resolver had.
---
--- This is a uniform XY grid over each zone's axis-aligned bounding box,
--- mirroring the one kora_lib's own modules/zones already keeps for its
--- enter/exit tick (which kora_target cannot reuse -- that grid answers "which
--- zones are near the PLAYER", and kora_target deliberately resolves against the
--- AIM point instead; kora_lib exposes no point query over it either).
---
--- A zone is inserted into EVERY cell its AABB overlaps, so a point query only
--- ever has to look at the single cell containing that point -- no 3x3
--- neighbourhood, no radius padding. The AABB is then re-tested exactly before
--- the real `contains` predicate runs, so the grid only ever removes work; it
--- never decides containment.
---
--- Zones whose extent cannot be known (an arbitrary `contains` predicate from
--- the qb-target ComboZone/EntityZone bridges, or a moving entity zone) go in
--- `zoneUnbounded` and are still scanned every tick, exactly as before. That
--- is the safe fallback: a missing bound costs performance, never correctness.
--- ---------------------------------------------------------------------------
+-- Zone broad phase: uniform XY grid over each zone's AABB; a zone sits in every cell it overlaps,
+-- so a point query reads one cell. The AABB is re-tested exactly before `contains`: the grid only
+-- removes work, never decides containment. Zones with no derivable extent go in zoneUnbounded and
+-- are scanned every tick.
 local ZONE_CELL_SIZE = 50.0
 
--- A bound that spans more cells than this is treated as unbounded rather than
--- written into thousands of buckets. Nothing legitimate in a target resource
--- is 3km across, and an accidental huge zone must not make registration itself
--- expensive.
+-- Wider than this is treated as unbounded rather than written into thousands of buckets.
 local ZONE_MAX_CELL_SPAN = 64
 
 local zoneGrid = {}        -- cellKey -> { [id] = true }
@@ -340,10 +300,8 @@ function Target.zonesWithin(x, y, radius, out)
     local minCx, minCy = zoneCell(x - radius, y - radius)
     local maxCx, maxCy = zoneCell(x + radius, y + radius)
 
-    -- A zone wider than one cell lives in several buckets, so an area sweep
-    -- (unlike the single-cell Target.zonesNear) can see the same id twice.
-    -- Reused rather than allocated per call: the sprite loop runs at frame
-    -- cadence.
+    -- A wide zone lives in several buckets, so an area sweep can see an id twice.
+    -- Reused scratch: the sprite loop runs at frame cadence.
     local seen = zonesWithinSeen
     for id in pairs(seen) do seen[id] = nil end
 
@@ -439,8 +397,6 @@ local function unregisterZone(id, registration)
     end
 end
 
--- Bounds builders. Each returns an AABB that fully contains the shape, or nil
--- when it cannot be derived (see indexZone).
 local function boxBounds(coords, size, rotation)
     local radians = math.rad(rotation or 0.0)
     local cosR, sinR = math.abs(math.cos(radians)), math.abs(math.sin(radians))
@@ -466,12 +422,8 @@ local function sphereBounds(coords, radius)
     }
 end
 
--- minZ/maxZ are only known when the caller gave them explicitly: kora_lib
--- derives an implicit band from `thickness` against its own config default,
--- which lives in kora_lib's environment and isn't readable from here. An
--- unbounded vertical band is the correct conservative answer -- the grid is
--- indexed on XY only, so a tall AABB costs at most one wasted exact test and
--- can never hide a zone.
+-- minZ/maxZ are known only when given explicitly: kora_lib's implicit band depends on its own config.
+-- Unbounded vertical is the safe answer since the grid is XY-only.
 local function polyBounds(points, minZ, maxZ)
     local bounds = {
         minX = math.huge, maxX = -math.huge,
@@ -529,15 +481,9 @@ function Target.destroyRegistration(id)
     elseif registration.kind == "globalBone" then
         Target.byGlobalBone[id] = nil
     elseif registration.kind == "zone" then
-        -- The double-layer-ownership fix: Kora.zones.box/sphere/poly attribute
-        -- the zone's own kora_lib-internal cleanup to whichever resource called
-        -- INTO kora_lib -- which is "qbtarget" itself when a third-party
-        -- consumer called exports.kora_target:addBoxZone, not that consumer.
-        -- kora_lib's own cleanup-on-stop therefore never fires for the real
-        -- consumer stopping; Target.ownership above (tracked against the
-        -- REAL invoking resource, captured in Target.addBoxZone/etc before
-        -- ever calling into Kora.zones.*) is what has to proactively tear the
-        -- underlying zone down here. See AGENTS.md "Ownership subtlety".
+        -- Kora.zones.* attributes the zone to the resource calling into kora_lib (kora_target itself),
+        -- so kora_lib's stop sweep never fires for the real consumer; tear the zone down here.
+        -- See AGENTS.md "Ownership subtlety".
         unregisterZone(id, registration)
         if registration.zoneHandle then registration.zoneHandle.remove() end
     end
@@ -762,11 +708,7 @@ function Target.addBoxZone(zoneOptions)
     local options = validateOptions(zoneOptions.options)
     local id = nextId()
 
-    -- Captured HERE, before calling into Kora.zones.box -- see the "Ownership
-    -- subtlety" note on destroyRegistration/Target.ownership above and in
-    -- AGENTS.md. By the time Kora.zones.box resolves its own
-    -- GetInvokingResource(), the caller will read as "kora_target", not the
-    -- real external consumer.
+    -- Captured before calling Kora.zones.box, which would attribute the zone to kora_target.
     local owner = GetInvokingResource() or GetCurrentResourceName()
 
     local zoneHandle = Kora.zones.box({
@@ -883,11 +825,7 @@ function Target.addPolyZone(zoneOptions)
     return id
 end
 
----Internal compatibility constructor for a zone supplied by another resource
----(notably qb-target AddComboZone's PolyZone objects). The native kora_target API
----stays limited to validated kora_lib shapes; the bridge only needs a contains
----predicate and uses the same ownership/removal/cache machinery as native
----zones.
+---Internal: zone supplied by another resource (e.g. qb-target AddComboZone); needs only a contains predicate.
 ---@param contains fun(point: any): boolean
 ---@param options QBTargetOption[]
 ---@param defaultDistance? number
@@ -921,17 +859,8 @@ function Target._addCustomZone(contains, options, defaultDistance, spriteCoords,
     return id
 end
 
----Builds a broad-phase AABB for Target._addCustomZone from an XY centre,
----per-axis half-extents, and an optional vertical band. Exposed for the compat
----bridges, which construct their own `contains` predicates but do know the
----shape those predicates describe.
----
----Every argument must be a bound the predicate can never match OUTSIDE of. An
----over-large box only costs a wasted exact test; an under-sized one silently
----makes the zone untargetable. Omit the bounds argument entirely (rather than
----guessing) whenever that cannot be guaranteed -- an unindexed zone is still
----scanned every tick, so the only cost is the performance this index exists
----to reclaim.
+---Builds a broad-phase AABB for Target._addCustomZone from an XY centre, half-extents and optional vertical band.
+---Every bound must enclose the shape; omit the bounds argument entirely when that can't be guaranteed.
 ---@param x number
 ---@param y number
 ---@param extentX number
@@ -1002,9 +931,6 @@ function Target.runServerAction(name, entity, maxDistance, ...)
         netId = NetworkGetNetworkIdFromEntity(entity)
     end
 
-    -- kora_lib's Kora.callback module forwards a handler's return values in full
-    -- (multi-value returns end to end) -- server/server.lua's handler
-    -- replies with (ok, ...) directly, so there's nothing to unpack here.
     return Kora.callback.trigger("qbtarget:server:runAction", name, netId, maxDistance, ...)
 end
 

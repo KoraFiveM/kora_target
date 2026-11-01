@@ -1,10 +1,4 @@
--- Neither real qb-target nor real ox_target validate actions server-side
--- themselves -- that has always been the consumer script's own job. This is
--- one small, OPT-IN primitive worth having anyway (given "don't trust the
--- client" is otherwise unaddressed here): a distance-revalidated relay for a
--- server action, registered by name. Deliberately not a permission framework
--- (job/gang/item checks) -- no qb-core/ox_core exists in this repo to hook
--- into one, see kora_target/docs.md.
+-- Opt-in primitive: distance-revalidated relay for named server actions. Not a permission framework (job/gang/item checks).
 ServerTarget = ServerTarget or {}
 
 local serverActions = {}
@@ -16,12 +10,7 @@ local ENTITY_VALIDATION_MESSAGES = {
     too_far = 'Too far from target.',
 }
 
--- kora_lib's Kora.callback module now forwards a handler's return values in full
--- (multi-value returns end to end), so this replies with (ok, ...) directly
--- -- true plus the action handler's own return values, or false plus a
--- reason string -- rather than the hand-rolled envelope table this used to
--- need before that fix. Target.runServerAction on the client receives these
--- as real return values with no unpacking of its own required.
+-- Replies with (ok, ...) directly: true plus the handler's return values, or false plus a reason string.
 Kora.callback.register('qbtarget:server:runAction', function(src, name, netId, _clientDistance, ...)
     local action = serverActions[name]
     if not action then

@@ -1,32 +1,14 @@
--- Drop-in compatibility bridge: translates the real, public ox_target API
--- into calls against Target.* directly (same resource -- no exports.kora_target:
--- round trip needed). Scripts written against exports.ox_target:... keep
--- working unmodified even though this resource is literally named
--- "qbtarget", not "ox_target" -- see provideExport below.
---
--- See ../../AGENTS.md for the full function-by-function mapping table and
--- the explicitly flagged public-knowledge assumptions (getState()'s exact
--- return shape, isActive). canInteract receives ox_target's
--- (entity, distance, coords, name, bone) -- bone is always nil -- and
--- `groups` is enforced against kora_core job/gang data (see makeCanInteract).
+-- Drop-in bridge translating the public ox_target API onto Target.* directly (same resource, no exports round trip).
+-- See ../../AGENTS.md for the mapping table. canInteract receives ox_target's (entity, distance, coords, name, bone)
+-- with bone always nil; `groups` is enforced against kora_core job/gang data (see makeCanInteract).
 
 Target = Target or {}
 
--- See client/compat/qb-target.lua's identical copy of this helper for why
--- it's needed (kora_target doesn't `provide 'ox_target'`, and even
--- `provide` alone wouldn't make exports.ox_target:Fn() resolve here -- only registering the underlying
--- __cfx_export_ox_target_<name> event does). Duplicated rather than shared:
--- kora_lib publishes the identity bridge for compatibility providers in either realm.
+-- See qb-target.lua's copy for why this is needed: `provide` alone doesn't make exports.ox_target:Fn() resolve here,
+-- only registering the __cfx_export_ox_target_<name> event does.
 local provideExport = Kora.compat.provideExport
 
--- A callback passed through an FXServer export boundary is represented as a
--- table with an __call metamethod, not a Lua value whose type is "function"
--- -- see client/compat/qb-target.lua's identical copy of this helper (and
--- comment) for the concrete failure this fixes: a cross-resource
--- `onSelect`/`action` reaching this bridge in that shape used to silently
--- fall through to serverEvent/event/nothing, since `type(x) == 'function'`
--- is false for it. Duplicated rather than shared for the same reason
--- kora_lib also centralizes callable funcref detection across export boundaries.
+-- Export-boundary callbacks are tables with __call, not functions; see qb-target.lua's copy for the failure this fixes.
 local isCallable = Kora.util.isCallable
 
 -- Fields upstream strips from the table handed to export/event/serverEvent
@@ -55,7 +37,6 @@ local function responseFor(entity, context, server, option)
     return response
 end
 
--- ---------------------------------------------------------------------------
 -- Sub-menus (openMenu / menuName)
 --
 -- Upstream shows only options whose menuName equals the current menu
@@ -64,7 +45,6 @@ end
 -- global entry. Kora resolves one snapshot per key hold, so the chosen menu
 -- stays current across presses until go-back/'home' is chosen or
 -- `kora_target:oxMenuTimeoutMs` (default 15000, 0 = never) passes.
--- ---------------------------------------------------------------------------
 local currentMenu, menuHistory, menuSetAt = nil, {}, 0
 local gobackIds = nil
 local GOBACK_NAME = 'builtin:goback'
@@ -599,9 +579,6 @@ local function removeGlobalOption(groupId)
     return removedAny
 end
 
----A bare network id or an array of network ids is normalised to an array,
----mirroring client/state.lua's own toArray for the same single-vs-array
----convenience.
 ---@param value any
 ---@return table
 local function toArray(value)
@@ -609,13 +586,7 @@ local function toArray(value)
     return { value }
 end
 
--- addEntity/removeEntity: real ox_target's NETWORK-id scoped entity API --
--- different from addLocalEntity/removeLocalEntity above, which already take
--- local entity handles valid on this client directly. ox_target's addEntity
--- takes a network id (or array of them), letting a caller target something
--- it only knows the netId for (e.g. received over an event); bridged here to
--- Target.addEntity/removeEntity (both LOCAL-handle scoped) via
--- NetworkGetEntityFromNetworkId, FiveM's standard netId->handle native.
+-- addEntity/removeEntity take NETWORK ids (unlike addLocalEntity), bridged to the local-handle Target.* via NetworkGetEntityFromNetworkId.
 local function addEntity(netIds, options)
     local entities = {}
     for i, netId in ipairs(toArray(netIds)) do
