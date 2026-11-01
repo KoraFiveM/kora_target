@@ -441,7 +441,6 @@ local function polyBounds(points, minZ, maxZ)
     return bounds
 end
 
-
 ---Every id still owned by `id` collected into a plain array before any of
 ---them are torn down -- destroyRegistration mutates the very index tables
 ---these ids are read from, so walking `pairs(set)` while destroying entries
@@ -922,7 +921,7 @@ end
 function Target.runServerAction(name, entity, maxDistance, ...)
     assert(type(name) == "string" and #name > 0, "runServerAction requires a name.")
 
-    local netId = nil
+    local netId
 
     if entity then
         assert(NetworkGetEntityIsNetworked(entity),

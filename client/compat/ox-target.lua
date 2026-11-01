@@ -89,7 +89,7 @@ local function ensureGoback()
 end
 
 local function activeMenu()
-    if currentMenu and menuSetAt then
+    if currentMenu then
         local timeout = menuTimeoutMs()
         if timeout > 0 and GetGameTimer() - menuSetAt > timeout then
             currentMenu, menuHistory = nil, {}
@@ -506,10 +506,7 @@ local function disableTargeting(state)
     return Target.setEnabled(not state)
 end
 
--- Best-effort: ox_target's exact getState() return shape isn't confidently
--- known from public knowledge alone (see AGENTS.md's assumptions list).
--- Returns kora_target's own getState() shape as-is rather than guessing at a
--- reshape that could be wrong in a different way.
+-- ox_target's exact getState() return shape isn't known; kora_target's own shape is returned as-is.
 local function getState()
     return Target.getState()
 end
