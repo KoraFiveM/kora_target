@@ -879,4 +879,13 @@ harness.test('forceRelease cancels the session, skips the release selection and 
     Target._releaseLegacyFocus = previous
 end)
 
+harness.test('recovery defaults cover focus loss, Alt fallback and menu idle', function()
+    local recovery = Config.target.recovery
+    harness.assertTrue(recovery.cancelOnFocusLoss, 'focus loss cancels')
+    harness.assertEqual(recovery.focusReleaseIgnoreMs, 1500, 'post-focus key-up ignore window')
+    harness.assertTrue(recovery.altControlFallback, 'Alt control fallback on')
+    harness.assertEqual(recovery.menuIdleTimeoutMs, 30000, 'menu idle timeout')
+    harness.assertTrue(recovery.nuiListener, 'NUI listener on')
+end)
+
 harness.report('qbtarget runtime')
