@@ -566,4 +566,29 @@ harness.test('an option with no filters at all is unaffected (no QBCore dependen
     harness.assertTrue(addOptionAndCheck({ label = 'Anyone' }))
 end)
 
+harness.test('pending SpawnPed configs spawn on OnPlayerLoaded and respawn after unload', function()
+    local pedConfig = {
+        model = 'pending_model',
+        coords = { x = 1.0, y = 2.0, z = 3.0, w = 4.0 },
+        target = { options = { { label = 'Pending' } } },
+        currentpednumber = 0,
+    }
+    spawnPed(pedConfig)
+    harness.assertEqual(pedConfig.currentpednumber, 0, 'a config without spawnNow must not spawn immediately')
+
+    netHandlers['QBCore:Client:OnPlayerLoaded']()
+    local ped = pedConfig.currentpednumber
+    harness.assertTrue(ped ~= 0, 'OnPlayerLoaded must spawn the pending ped')
+    harness.assertTrue( Target.byEntity[ped] ~= nil, 'the pending ped must get its entity target')
+
+    netHandlers['QBCore:Client:OnPlayerLoaded']()
+    harness.assertEqual(pedConfig.currentpednumber, ped, 'an already spawned ped must not be spawned twice')
+
+    netHandlers['QBCore:Client:OnPlayerUnload']()
+    harness.assertEqual(pedConfig.currentpednumber, 0, 'unload must delete spawned peds')
+    netHandlers['QBCore:Client:OnPlayerLoaded']()
+    harness.assertTrue(pedConfig.currentpednumber ~= 0, 'reload must respawn the configured ped')
+    removeSpawnedPed(pedConfig.currentpednumber)
+end)
+
 harness.report('qbtarget qb-target compatibility')
