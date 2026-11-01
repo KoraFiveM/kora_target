@@ -1150,6 +1150,7 @@ end
 Target._releaseLegacyFocus = function()
     if legacyHasFocus then DisableNUI() end
 end
+Target._legacyFocused = function() return legacyHasFocus end
 
 local function EnableNUI(options)
     if not Target.active or legacyHasFocus then return end

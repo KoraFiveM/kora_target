@@ -6,6 +6,7 @@ local candidatePool = {}
 local currentRaycastEntity
 local menuPed, menuPedWasFrozen
 local menuHintShown = false
+local startWatchdog
 
 -- Runtime-only cache; never authoritative.
 local entityRegistrationCache = { entity = nil, model = nil, entityType = nil, revision = nil, registrations = {} }
@@ -579,6 +580,7 @@ local function selectCandidates(candidates)
 
     menuOpen = Kora.interact.open(items)
     if not menuOpen then return end
+    startWatchdog()
     local movementMode = menuMovementMode()
     if movementMode == 'freeze' then setMenuPositionFrozen(true) end
 
@@ -633,37 +635,98 @@ local function recoveryConfig()
 end
 
 local CANCEL_CONTROLS = { 200, 177, 25 } -- Escape, Backspace/right-click (cancel), aim
+local MENU_ACTIVITY_CONTROLS = { 38, 24, 15, 14, 27, 173 } -- select, scroll, arrows
+local ALT_CONTROL = 19 -- INPUT_CHARACTER_WHEEL, the default control behind Left Alt
+local MENU_IDLE_DEFAULT_MS = 30000
 
--- A held key whose release event never arrives (Alt+Tab while holding Alt)
--- leaves `holding` true forever. While a session runs, poll the physical key
--- state and the cancel inputs and drop the session when either says so.
-local function startWatchdog()
+local lastFocusLossAt = -1000000
+local watchdogRunning = false
+
+local function noteFocusLoss()
+    lastFocusLossAt = GetGameTimer()
+end
+
+-- Unknown (older builds without the native) counts as focused.
+local function windowFocused()
+    local native = IsGameWindowFocused
+    if type(native) ~= 'function' then return true end
+    local ok, focused = pcall(native)
+    return not ok or focused ~= false
+end
+
+local function legacyFocused()
+    return Target._legacyFocused ~= nil and Target._legacyFocused() == true
+end
+
+local function sessionActive()
+    return holding or menuOpen or legacyFocused()
+end
+
+-- The hold key is Left Alt by default, and the game reports it as INPUT_CHARACTER_WHEEL.
+-- That is a real control, unlike the +command hash which is not reliably readable.
+-- Skipped when the key was rebound to something other than Alt.
+local function altFallbackActive(recovery)
+    if recovery.altControlFallback == false then return false end
+    if tostring(Config.target.keybind.defaultKey):upper() ~= 'LMENU' then return false end
+    local ok, bound = pcall(GetControlInstructionalButton, 0, joaat('+' .. Config.target.keybind.command) | 0x80000000, true)
+    if ok and type(bound) == 'string' and bound:sub(1, 2) == 't_' and bound:upper() ~= 't_LMENU' then return false end
+    return true
+end
+
+local function anyPressed(controls)
+    for _, control in ipairs(controls) do
+        if IsDisabledControlJustPressed(0, control) or IsControlJustPressed(0, control) then return true end
+    end
+    return false
+end
+
+-- Alt+Tab swallows the key-up (hold mode) and can leave the selector or legacy
+-- NUI focus open. While anything is active this thread cancels it when the
+-- window loses focus, the pause menu opens, a cancel input is pressed, the hold
+-- key reads "up", the selector sits idle too long, or legacy focus is orphaned.
+startWatchdog = function()
     local recovery = recoveryConfig()
-    if not recovery then return end
+    if not recovery or watchdogRunning then return end
+    watchdogRunning = true
     CreateThread(function()
-        local keyHash = joaat('+' .. Config.target.keybind.command) | 0x80000000
-        local seenDown, upSince = false, nil
-        while holding do
+        local cmd = Config.target.keybind.command
+        local keyHash = joaat('+' .. cmd) | 0x80000000
+        local useAlt = altFallbackActive(recovery)
+        local seenDown, upSince, legacySince = false, nil, nil
+        local menuWasOpen, lastActivity = false, GetGameTimer()
+        while sessionActive() do
             local now = GetGameTimer()
+            if not windowFocused() then
+                noteFocusLoss()
+                if recovery.cancelOnFocusLoss ~= false then forceRelease(); break end
+            end
             if recovery.cancelOnPause ~= false and IsPauseMenuActive() then
                 forceRelease()
                 break
             end
-            if recovery.cancelControls ~= false then
+            if holding and recovery.cancelControls ~= false then
+                local cancelled = false
                 for _, control in ipairs(CANCEL_CONTROLS) do
-                    if IsDisabledControlJustPressed(0, control) then
-                        startPauseSuppression()
-                        forceRelease()
-                        return
-                    end
+                    if IsDisabledControlJustPressed(0, control) then cancelled = true break end
+                end
+                if cancelled then
+                    startPauseSuppression()
+                    forceRelease()
+                    break
                 end
             end
-            if not Config.target.toggle then
-                if IsControlPressed(0, keyHash) or IsDisabledControlPressed(0, keyHash) then
+            if holding and not Config.target.toggle then
+                local down
+                if useAlt then
+                    down = IsControlPressed(0, ALT_CONTROL) or IsDisabledControlPressed(0, ALT_CONTROL)
+                else
+                    down = IsControlPressed(0, keyHash) or IsDisabledControlPressed(0, keyHash)
+                end
+                if down then
                     seenDown, upSince = true, nil
                 elseif seenDown then
                     -- Only trusted after the key was seen down once, so a
-                    -- native that cannot see the key can never cancel a hold.
+                    -- control that cannot see the key can never cancel a hold.
                     upSince = upSince or now
                     if now - upSince >= (tonumber(recovery.releaseGraceMs) or 250) then
                         forceRelease()
@@ -671,8 +734,49 @@ local function startWatchdog()
                     end
                 end
             end
+            if menuOpen then
+                if not menuWasOpen or anyPressed(MENU_ACTIVITY_CONTROLS) then lastActivity = now end
+                local idle = tonumber(recovery.menuIdleTimeoutMs)
+                if idle == nil then idle = MENU_IDLE_DEFAULT_MS end
+                if idle > 0 and now - lastActivity >= idle then
+                    startPauseSuppression()
+                    forceRelease()
+                    break
+                end
+            end
+            menuWasOpen = menuOpen
+            if not holding and not menuOpen then
+                -- Orphaned cursor focus: the session ended but the legacy NUI kept focus.
+                legacySince = legacySince or now
+                if now - legacySince >= 1000 then forceRelease(); break end
+            else
+                legacySince = nil
+            end
             Wait(0)
         end
+        watchdogRunning = false
+    end)
+end
+
+-- The NUI listener page (ui/focus.html) reports browser-side window blur and
+-- cancel input, which is the only place Escape/right-click are visible while
+-- NUI holds focus.
+if RegisterNUICallback then
+    RegisterNUICallback('targetFocus', function(data, cb)
+        local recovery = recoveryConfig()
+        local event = type(data) == 'table' and data.event or nil
+        if recovery and recovery.nuiListener ~= false and sessionActive() then
+            if event == 'blur' then
+                noteFocusLoss()
+                if recovery.cancelOnFocusLoss ~= false then forceRelease() end
+            elseif event == 'cancel' and recovery.cancelControls ~= false then
+                startPauseSuppression()
+                forceRelease()
+            end
+        elseif event == 'blur' then
+            noteFocusLoss()
+        end
+        cb('ok')
     end)
 end
 
@@ -768,6 +872,13 @@ Kora.keybind.add({
             return
         end
         if Config.target.toggle then return end
+        local recovery = recoveryConfig()
+        local ignoreMs = recovery and tonumber(recovery.focusReleaseIgnoreMs) or 0
+        if ignoreMs > 0 and GetGameTimer() - lastFocusLossAt < ignoreMs then
+            -- The key-up that follows an Alt+Tab round trip is not a selection.
+            forceRelease()
+            return
+        end
         holding = false
         local candidates = currentCandidates
         resetRuntimeState()

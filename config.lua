@@ -29,6 +29,11 @@ Config.target = {
         releaseGraceMs = 250,    -- hold mode: ms the key must read "up" (after being seen down) before the session is dropped
         cancelOnPause = true,    -- cancel targeting when the pause menu opens
         cancelControls = true,   -- Escape, Backspace and right-click cancel targeting without selecting
+        cancelOnFocusLoss = true,      -- drop the session/menu when the game window loses focus (Alt+Tab); uses IsGameWindowFocused and the NUI blur listener
+        focusReleaseIgnoreMs = 1500,   -- hold mode: a key-up within this many ms of a focus loss cancels instead of selecting (0 disables)
+        altControlFallback = true,     -- hold mode with the default LMENU key: read INPUT_CHARACTER_WHEEL (19) instead of the +command hash for key state
+        menuIdleTimeoutMs = 30000,     -- close the option menu after this many ms without select/scroll input (0 disables)
+        nuiListener = true,            -- act on blur/cancel events posted by ui/focus.html
         resetCommand = 'target-reset', -- chat/F8 command that force-clears targeting; false or "" disables it
     },
 

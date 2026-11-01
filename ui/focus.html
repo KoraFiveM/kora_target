@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>kora_target focus</title></head>
+<body>
+<script>
+// Reports window blur (Alt+Tab) and Escape/right-click to kora_target's Lua side.
+function post(event) {
+    fetch('https://kora_target/targetFocus', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+        body: JSON.stringify({ event: event })
+    }).catch(function () {});
+}
+window.addEventListener('blur', function () { post('blur'); });
+document.addEventListener('visibilitychange', function () { if (document.hidden) post('blur'); });
+window.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' || e.key === 'Backspace') post('cancel');
+});
+window.addEventListener('contextmenu', function (e) { e.preventDefault(); post('cancel'); });
+</script>
+</body>
+</html>

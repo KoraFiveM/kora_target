@@ -59,3 +59,8 @@ client_scripts {
 server_scripts {
     'server/server.lua'
 }
+
+-- Tiny listener page: reports browser-side window blur and Escape/right-click
+-- to client/loop.lua (Config.target.recovery.nuiListener). It never takes focus.
+ui_page 'ui/focus.html'
+files { 'ui/focus.html' }

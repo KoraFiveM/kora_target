@@ -13,7 +13,17 @@ Hold `Config.target.keybind` (default `LMENU`, i.e. left Alt) to enter targeting
 
 ## Stuck-target recovery
 
-If the key-up event is lost (typically Alt+Tab while holding Alt), targeting would stay on. `Config.target.recovery` (enabled by default) runs a watchdog during a session: hold mode cancels when the key is no longer physically down for `releaseGraceMs` (default 250); `cancelOnPause` (true) cancels when the pause menu opens; `cancelControls` (true) lets Escape, Backspace or right-click cancel without selecting. `resetCommand` (default `target-reset`; false/empty disables) force-clears targeting, the menu and any legacy NUI focus. Hold and toggle modes both keep working.
+If the key-up event is lost (typically Alt+Tab while holding Alt), targeting or the option menu would stay on. `Config.target.recovery` (enabled by default) runs a watchdog while a session, the option menu or legacy NUI focus is active. It never runs an option when it cancels. Options:
+
+- `cancelOnFocusLoss` (true): cancel when the game window loses focus (`IsGameWindowFocused`, plus blur events from `ui/focus.html` when `nuiListener` is true).
+- `focusReleaseIgnoreMs` (1500): in hold mode a key-up this soon after a focus loss cancels instead of opening the menu or selecting. 0 disables.
+- `altControlFallback` (true): in hold mode with the default `LMENU` key, key state is read from control 19 (INPUT_CHARACTER_WHEEL, Left Alt) instead of the unreliable `+target` command hash. The hold cancels after `releaseGraceMs` (250) of "up" once the key was seen down. Skipped if the key was rebound away from Alt.
+- `menuIdleTimeoutMs` (30000): close the option menu after this long without select/scroll input. 0 disables.
+- `cancelOnPause` (true): cancel when the pause menu opens.
+- `cancelControls` (true): Escape, Backspace or right-click cancel without selecting (also reported from the NUI page when it has focus).
+- `resetCommand` (`target-reset`; false/empty disables): force-clears targeting, the menu and any legacy NUI focus.
+
+Orphaned legacy (qb-target compat) NUI focus is released one second after the session ends. Hold and toggle modes both keep working.
 
 ## Performance configuration
 Targeting has no idle client thread while its key is up, and no targeting loop
