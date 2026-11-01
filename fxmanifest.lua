@@ -22,8 +22,14 @@ dependencies {
 -- underlying __cfx_export_<name>_<export> event for each provided identity
 -- -- see client/compat/qb-target.lua and client/compat/ox-target.lua's
 -- provideExport() helper.
+--
+-- `ox_target` is deliberately NOT provided: the stubs/ox_target placeholder
+-- owns that resource name, and claiming it here too made `stop ox_target`
+-- stop kora_target (and its dependents). exports.ox_target:* still resolves
+-- through the manual export registration; resources that declare
+-- `dependency 'ox_target'` or check GetResourceState('ox_target') need the
+-- placeholder ensured after kora_target.
 provide 'qb-target'
-provide 'ox_target'
 
 -- Required to reach Kora.raycast/Kora.zones/Kora.world/Kora.drawing/Kora.nui/Kora.cache/
 -- Kora.callback/Kora.resources -- see kora_lib's own AGENTS.md for why this is how a

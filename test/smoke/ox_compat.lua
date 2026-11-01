@@ -561,4 +561,13 @@ harness.test('ox_inventory addBoxZone: returns an id removeZone accepts (craftin
     clearRegistrations()
 end)
 
+harness.test('manifest does not claim the ox_target name', function()
+    local file = assert(io.open(resourceRoot .. 'fxmanifest.lua', 'r'))
+    local manifest = file:read('*a')
+    file:close()
+    harness.assertTrue(not manifest:find("^%s*provide%s+['\"]ox_target['\"]") and not manifest:find("\n%s*provide%s+['\"]ox_target['\"]"), "kora_target must not provide 'ox_target'")
+    harness.assertTrue(manifest:find("provide 'qb-target'", 1, true) ~= nil, "still provides 'qb-target'")
+    harness.assertTrue(manifest:find("provide 'qbtarget'", 1, true) ~= nil, "still provides 'qbtarget'")
+end)
+
 harness.report('qbtarget ox_target compatibility')
