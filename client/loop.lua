@@ -578,17 +578,24 @@ local function resolverWait()
     return Config.target.tickMiss
 end
 
+-- A zone option is reached through the point the ray hit inside the zone. The entity the ray also
+-- touched (a door or wall prop) is incidental and its origin can be many metres from that point, so
+-- only zones bound to an entity (targetEntity) follow it.
+local function followsEntity(registration)
+    return registration.kind ~= 'zone' or registration.targetEntity ~= nil
+end
+
 -- The menu works from the snapshot taken at release, so check that at least one
 -- snapshotted option can still be reached from where the player is now. The
 -- raycast anchor is stale for a moving entity, so use the entity's live position.
 local function menuTargetInRange(candidates)
     local pedCoords = GetEntityCoords(PlayerPedId())
     for _, candidate in ipairs(candidates) do
-        local entity = candidate.entity
+        local registration = candidate.registration
+        local entity = followsEntity(registration) and candidate.entity or nil
         local entityValid = not entity or entity == 0 or DoesEntityExist(entity)
         if entityValid then
             local anchor = entity and entity ~= 0 and GetEntityCoords(entity) or candidate.anchorCoords
-            local registration = candidate.registration
             local maxDistance = candidate.option.distance or registration.distance or Config.target.defaultOptionDistance
             if anchor and distanceSq(pedCoords, anchor) <= maxDistance * maxDistance then return true end
         end

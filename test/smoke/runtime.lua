@@ -331,6 +331,23 @@ harness.test('menu range check fails once every target is out of reach', functio
     _G.DoesEntityExist = savedDoes
 end)
 
+harness.test('menu range check anchors zone options on the hit point, not the incidental aimed entity', function()
+    local savedCoords, savedDoes = _G.GetEntityCoords, _G.DoesEntityExist
+    _G.GetEntityCoords = function(entity)
+        if entity == 77 then return { x = 40, y = 0, z = 0 } end
+        return savedCoords(entity)
+    end
+    _G.DoesEntityExist = function() return true end
+    local hit = { x = 1, y = 0, z = 0 }
+    local zone = { option = { label = 'Z', distance = 2.0 }, registration = { kind = 'zone' }, entity = 77, anchorCoords = hit }
+    harness.assertTrue(runtime.menuTargetInRange({ zone }), 'a zone option stays in range while the hit point is near, however far the door prop origin is')
+    local bound = { option = { label = 'B', distance = 2.0 }, registration = { kind = 'zone', targetEntity = 77 }, entity = 77, anchorCoords = hit }
+    harness.assertTrue(not runtime.menuTargetInRange({ bound }), 'an entity-bound zone still follows its entity')
+    local entityOption = { option = { label = 'E', distance = 2.0 }, registration = { kind = 'entity' }, entity = 77, anchorCoords = hit }
+    harness.assertTrue(not runtime.menuTargetInRange({ entityOption }), 'entity options still follow the entity')
+    _G.GetEntityCoords, _G.DoesEntityExist = savedCoords, savedDoes
+end)
+
 harness.test('sprite visibility honours global switch, per-zone override and allowPerZoneOverride', function()
     local settings = Config.target.sprites
     local saved = { settings.enabled, settings.allowPerZoneOverride }
