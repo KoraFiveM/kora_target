@@ -348,6 +348,40 @@ harness.test('menu range check anchors zone options on the hit point, not the in
     _G.GetEntityCoords, _G.DoesEntityExist = savedCoords, savedDoes
 end)
 
+harness.test('menu range check measures entity options to the aimed point, carried with the entity', function()
+    local savedCoords, savedDoes = _G.GetEntityCoords, _G.DoesEntityExist
+    local savedToLocal, savedToWorld = _G.GetOffsetFromEntityGivenWorldCoords, _G.GetOffsetFromEntityInWorldCoords
+    -- A long vehicle: its origin is 4 m from the player, its trunk lid 1 m.
+    local origin = { x = 4, y = 0, z = 0 }
+    _G.GetEntityCoords = function(entity)
+        if entity == 88 then return origin end
+        return savedCoords(entity)
+    end
+    _G.DoesEntityExist = function() return true end
+    _G.GetOffsetFromEntityGivenWorldCoords = function(_, x, y, z)
+        return { x = x - origin.x, y = y - origin.y, z = z - origin.z }
+    end
+    _G.GetOffsetFromEntityInWorldCoords = function(_, x, y, z)
+        return { x = origin.x + x, y = origin.y + y, z = origin.z + z }
+    end
+
+    local function trunkOption(label)
+        return { option = { label = label, distance = 3.0, onSelect = function() end },
+            registration = { kind = 'globalType' }, entity = 88, anchorCoords = { x = 1, y = 0, z = 0 } }
+    end
+    local candidates = { trunkOption('Open trunk'), trunkOption('Trunk storage') }
+    runtime.closeTargetMenu()
+    runtime.selectCandidates(candidates)
+    harness.assertTrue(runtime.menuTargetInRange(candidates),
+        'the menu stays open while the aimed trunk is in reach, however far the vehicle origin is')
+    origin = { x = 40, y = 0, z = 0 }
+    harness.assertTrue(not runtime.menuTargetInRange(candidates), 'the anchor still moves with the vehicle')
+    runtime.closeTargetMenu()
+
+    _G.GetEntityCoords, _G.DoesEntityExist = savedCoords, savedDoes
+    _G.GetOffsetFromEntityGivenWorldCoords, _G.GetOffsetFromEntityInWorldCoords = savedToLocal, savedToWorld
+end)
+
 harness.test('sprite visibility honours global switch, per-zone override and allowPerZoneOverride', function()
     local settings = Config.target.sprites
     local saved = { settings.enabled, settings.allowPerZoneOverride }

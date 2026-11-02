@@ -585,9 +585,21 @@ local function followsEntity(registration)
     return registration.kind ~= 'zone' or registration.targetEntity ~= nil
 end
 
+-- The aimed point in the entity's own frame, so the menu range check can follow
+-- a moving entity while still measuring to the spot the resolver measured to.
+local function entityAnchorOffset(entity, point)
+    if not (point and point.x) then return nil end
+    local ok, offset = pcall(GetOffsetFromEntityGivenWorldCoords, entity, point.x, point.y, point.z)
+    return ok and offset or nil
+end
+
 -- The menu works from the snapshot taken at release, so check that at least one
 -- snapshotted option can still be reached from where the player is now. The
--- raycast anchor is stale for a moving entity, so use the entity's live position.
+-- resolver accepted each option by its distance to the aimed point, so measure
+-- to that same point. For an entity it is carried along with the entity
+-- (anchorOffset, set when the menu opens); its origin is not used, because on a
+-- long vehicle the origin is metres from the trunk or hood that was aimed at and
+-- the menu would close on its first frame.
 local function menuTargetInRange(candidates)
     local pedCoords = GetEntityCoords(PlayerPedId())
     for _, candidate in ipairs(candidates) do
@@ -595,7 +607,15 @@ local function menuTargetInRange(candidates)
         local entity = followsEntity(registration) and candidate.entity or nil
         local entityValid = not entity or entity == 0 or DoesEntityExist(entity)
         if entityValid then
-            local anchor = entity and entity ~= 0 and GetEntityCoords(entity) or candidate.anchorCoords
+            local anchor = candidate.anchorCoords
+            if entity and entity ~= 0 then
+                local offset = candidate.anchorOffset
+                if offset then
+                    anchor = GetOffsetFromEntityInWorldCoords(entity, offset.x, offset.y, offset.z)
+                else
+                    anchor = GetEntityCoords(entity)
+                end
+            end
             local maxDistance = candidate.option.distance or registration.distance or Config.target.defaultOptionDistance
             if anchor and distanceSq(pedCoords, anchor) <= maxDistance * maxDistance then return true end
         end
@@ -626,6 +646,8 @@ local function selectCandidates(candidates)
 
     local items = {}
     for index, candidate in ipairs(candidates) do
+        local entity = candidate.registration and followsEntity(candidate.registration) and candidate.entity or nil
+        candidate.anchorOffset = entity and entity ~= 0 and entityAnchorOffset(entity, candidate.anchorCoords) or nil
         items[index] = {
             label = candidate.option.label,
             icon = candidate.option.icon,
