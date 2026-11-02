@@ -1106,21 +1106,20 @@ local function DisableTarget(state)
     SendNUIMessage({ response = 'closeTarget' })
 end
 
+local GLOBAL_TYPE_NAMES = { [1] = 'ped', [2] = 'vehicle', [3] = 'object', ped = 'ped', vehicle = 'vehicle', object = 'object' }
+
 local function AddGlobalType(entityType, targetOptions)
-    local map = { [1] = 'ped', [2] = 'vehicle', [3] = 'object', ped = 'ped', vehicle = 'vehicle', object = 'object' }
-    local name = assert(map[entityType], 'AddGlobalType type must be 1, 2, 3, ped, vehicle, or object')
+    local name = assert(GLOBAL_TYPE_NAMES[entityType], 'AddGlobalType type must be 1, 2, 3, ped, vehicle, or object')
     return addGlobal(name)(targetOptions)
 end
 
 local function RemoveGlobalType(entityType, labels)
-    local map = { [1] = 'ped', [2] = 'vehicle', [3] = 'object', ped = 'ped', vehicle = 'vehicle', object = 'object' }
-    local name = assert(map[entityType], 'RemoveGlobalType type must be 1, 2, 3, ped, vehicle, or object')
+    local name = assert(GLOBAL_TYPE_NAMES[entityType], 'RemoveGlobalType type must be 1, 2, 3, ped, vehicle, or object')
     return removeIndexed('globalType', name, labels)
 end
 
 local function GetGlobalTypeData(entityType, label)
-    local map = { [1] = 'ped', [2] = 'vehicle', [3] = 'object', ped = 'ped', vehicle = 'vehicle', object = 'object' }
-    return map[entityType] and getIndexed('globalType', map[entityType], label) or nil
+    return GLOBAL_TYPE_NAMES[entityType] and getIndexed('globalType', GLOBAL_TYPE_NAMES[entityType], label) or nil
 end
 
 local function GetZoneData(name) return zonesByName[name] end
@@ -1133,8 +1132,7 @@ local function GetGlobalObjectData(label) return getIndexed('globalType', 'objec
 local function GetGlobalPlayerData(label) return getIndexed('globalPlayer', 'player', label) end
 
 local function UpdateGlobalTypeData(entityType, label, data)
-    local map = { [1] = 'ped', [2] = 'vehicle', [3] = 'object', ped = 'ped', vehicle = 'vehicle', object = 'object' }
-    return map[entityType] and updateIndexed('globalType', map[entityType], label, data) or false
+    return GLOBAL_TYPE_NAMES[entityType] and updateIndexed('globalType', GLOBAL_TYPE_NAMES[entityType], label, data) or false
 end
 
 local function UpdateZoneData(name, data)
