@@ -865,13 +865,12 @@ local function startTargeting()
                 Wait(Config.target.tickIdle)
             else
                 local snapshot = aimSnapshot()
+                Target.active = true
                 if aimIsStatic(now, snapshot) then
-                    Target.active = true
                     if Config.target.diagnostics then diagnostics.skipped = diagnostics.skipped + 1 end
                     reportDiagnostics(now)
                     Wait(resolverWait())
                 else
-                    Target.active = true
                     local startedAt = now
                     if Config.target.diagnostics then diagnostics.raycasts = diagnostics.raycasts + 1 end
                     local hit, hitCoords, entity = raycastTarget(snapshot, now)
