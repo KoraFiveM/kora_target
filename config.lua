@@ -140,16 +140,21 @@ Config.target = {
     serverActionMaxDistance = 5.0, -- meters; default cap Target.runServerAction's server-side distance check enforces
 
     -- What player movement does while the multi-option menu is open:
-    --   'freeze' = hold the ped still and ignore movement keys (no walk-in-place)
+    --   'allow'  = free movement: walking, sprinting, jumping and falling all keep
+    --              working; closeMenuOutOfRange closes the menu once the player is
+    --              out of reach of every option (DEFAULT)
     --   'close'  = pressing a movement key closes the menu; the player walks away
-    --   'allow'  = free movement (closeMenuOutOfRange still applies)
-    -- Leave it unset to follow the legacy freezeOnMenu flag below.
+    --   'freeze' = hold the ped still and ignore movement keys (opt-in; the ped is
+    --              never held while airborne or dead)
+    -- Left unset (nil) it follows the legacy freezeOnMenu flag below, which defaults
+    -- to off, so the default is 'allow' and the menu never interrupts movement
+    -- unless a server opts in.
     menuMovement = nil,
     -- Legacy flag, still honoured when menuMovement is unset: true = 'freeze', false = 'allow'.
     freezeOnMenu = false,
     lockCameraOnMenu = false,      -- also lock the gameplay camera (look controls) while the menu is open
-    closeMenuOutOfRange = true,    -- close the open menu when its target moves or the player walks out of range
-    closeWhenAirborne = true,      -- cancel targeting (prompt and option menu) and never freeze the ped while it is falling, jumping, ragdolling, parachuting or climbing
+    closeMenuOutOfRange = true,    -- close the open menu when its target moves or the player walks out of range (checked every tickActive ms, only while the menu is open); an option is also refused if its target is out of range when chosen
+    closeWhenAirborne = false,     -- false (default) = targeting and the menu keep working while jumping or falling. true = cancel targeting (prompt and option menu) while the ped is falling, jumping, ragdolling, parachuting or climbing
     rangeTolerance = 0.5,          -- metres added to an option's distance before the menu closes or a selected option is refused as out of range
     showCloseHint = false,         -- show the GTA help message "Press Escape to close" for a few seconds when the multiple-option menu opens; false (default) shows nothing. Escape still closes the menu and pause-menu suppression is unaffected
     suppressPauseOnClose = true,   -- Escape closes the option menu without also opening the GTA pause menu (pause controls are blocked while the menu is open and briefly after it closes). Set false to leave pause-key handling alone.
@@ -237,11 +242,11 @@ if Kora and Kora.config and Kora.config.adopt then
         ['target.diagnostics'] = 'Print targeting workload summaries for troubleshooting.',
         ['target.diagnosticsInterval'] = 'Time between workload summaries while performance logging is enabled and targeting runs.',
         ['target.debug'] = 'Show zone outlines for setup and troubleshooting. Individual zones may also request their own outlines.',
-        ['target.menuMovement'] = 'Movement while the multiple-option menu is open: freeze holds the player still, close closes the menu when a movement key is pressed, allow lets the player move freely.',
+        ['target.menuMovement'] = 'Movement while the multiple-option menu is open: allow (default) lets the player move freely, close closes the menu when a movement key is pressed, freeze holds the player still.',
         ['target.freezeOnMenu'] = 'Legacy: used as freeze (on) or allow (off) only when Movement while option menu is open was never set.',
         ['target.lockCameraOnMenu'] = 'Lock the gameplay camera while the multiple-option menu is open.',
         ['target.closeMenuOutOfRange'] = 'Close the multiple-option menu when its target is no longer within reach.',
-        ['target.closeWhenAirborne'] = 'Cancel the targeting prompt and the option menu when the player falls, jumps, ragdolls, parachutes or climbs, and never hold the player in place while off the ground.',
+        ['target.closeWhenAirborne'] = 'Off (default): targeting and the option menu keep working while the player jumps or falls. On: cancel the targeting prompt and the option menu when the player falls, jumps, ragdolls, parachutes or climbs. A player is never held in place while off the ground either way.',
         ['target.rangeTolerance'] = 'Extra distance allowed beyond an option\'s own range before the open menu closes or a chosen option is refused as out of range.',
         ['target.showCloseHint'] = 'Show the GTA help message explaining how to close the multiple-option menu for a few seconds when it opens. Off by default; Escape still closes the menu either way.',
         ['target.suppressPauseOnClose'] = 'Stop Escape from also opening the game pause menu when it closes the multiple-option menu. The pause keys are blocked while the menu is open and briefly after it closes.',

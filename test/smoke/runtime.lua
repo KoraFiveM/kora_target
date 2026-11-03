@@ -998,6 +998,7 @@ end)
 harness.test('the option menu never freezes an airborne ped and releases the freeze on leaving the ground', function()
     resetMenuInput()
     Config.target.menuMovement = 'freeze'
+    Config.target.closeWhenAirborne = true
     for _, state in ipairs({ 'falling', 'jumping', 'ragdoll', 'freefall', 'climbing', 'vaulting', 'inAir' }) do
         pedState = { [state] = true }
         runtime.selectCandidates(menuCandidates)
@@ -1016,6 +1017,7 @@ harness.test('the option menu never freezes an airborne ped and releases the fre
     runtime.closeTargetMenu()
     harness.assertFalse(frozenEntities[1], 'closing the menu restores movement')
     pedState = {}
+    Config.target.closeWhenAirborne = false
     resetMenuInput()
 end)
 
@@ -1027,7 +1029,7 @@ harness.test('closeWhenAirborne=false keeps the previous behaviour', function()
     local opened = false
     runtime.selectCandidates(menuCandidates)
     harness.assertTrue(runtime.isMenuOpen(), 'with the option off the menu still opens in the air')
-    Config.target.closeWhenAirborne = true
+    Config.target.closeWhenAirborne = false
     pedState = {}
     resetMenuInput()
 end)
@@ -1035,9 +1037,15 @@ end)
 harness.test('releasing the key while airborne does not run a single option', function()
     local ran = 0
     local candidate = { option = { label = 'One', onSelect = function() ran = ran + 1 end }, registration = {}, anchorCoords = entityCoords }
+    Config.target.closeWhenAirborne = true
     pedState = { jumping = true }
     runtime.selectCandidates({ candidate })
     harness.assertEqual(ran, 0, 'no option may run mid-jump')
+    Config.target.closeWhenAirborne = false
+    pedState = { jumping = true }
+    runtime.selectCandidates({ candidate })
+    harness.assertEqual(ran, 1, 'with closeWhenAirborne off an option still runs mid-jump')
+    ran = 0
     pedState = {}
     runtime.selectCandidates({ candidate })
     harness.assertEqual(ran, 1, 'the same option runs once grounded')
@@ -1066,8 +1074,11 @@ harness.test('the menu range check honours rangeTolerance', function()
     harness.assertFalse(runtime.menuTargetInRange({ candidate }), 'outside distance + tolerance closes the menu')
 end)
 
-harness.test('the shipped defaults close targeting when airborne', function()
-    harness.assertEqual(Config.target.closeWhenAirborne, true, 'closeWhenAirborne defaults to on')
+harness.test('the shipped defaults never freeze or interrupt the player', function()
+    harness.assertEqual(Config.target.closeWhenAirborne, false, 'closeWhenAirborne defaults to off')
+    harness.assertEqual(Config.target.menuMovement, nil, 'menuMovement is unset, so the legacy flag (off) resolves it to allow')
+    harness.assertEqual(Config.target.freezeOnMenu, false, 'freezeOnMenu defaults to off')
+    harness.assertEqual(Config.target.closeMenuOutOfRange, true, 'the menu still closes once out of range')
     harness.assertEqual(Config.target.rangeTolerance, 0.5, 'rangeTolerance default')
 end)
 
