@@ -150,8 +150,9 @@ Config.target = {
     --              working; closeMenuOutOfRange closes the menu once the player is
     --              out of reach of every option (DEFAULT)
     --   'close'  = pressing a movement key closes the menu; the player walks away
-    --   'freeze' = hold the ped still and ignore movement keys (opt-in; the ped is
-    --              never held while airborne or dead)
+    --   'freeze' = ignore movement keys while the menu is open (opt-in). The ped's
+    --              position is never frozen: a walking ped slows to a natural
+    --              stop and a jumping or falling ped keeps falling
     -- Left unset (nil) it follows the legacy freezeOnMenu flag below, which defaults
     -- to off, so the default is 'allow' and the menu never interrupts movement
     -- unless a server opts in.
@@ -249,7 +250,7 @@ if Kora and Kora.config and Kora.config.adopt then
         ['target.diagnostics'] = 'Print targeting workload summaries for troubleshooting.',
         ['target.diagnosticsInterval'] = 'Time between workload summaries while performance logging is enabled and targeting runs.',
         ['target.debug'] = 'Show zone outlines for setup and troubleshooting. Individual zones may also request their own outlines.',
-        ['target.menuMovement'] = 'Movement while the multiple-option menu is open: allow (default) lets the player move freely, close closes the menu when a movement key is pressed, freeze holds the player still.',
+        ['target.menuMovement'] = 'Movement while the multiple-option menu is open: allow (default) lets the player move freely, close closes the menu when a movement key is pressed, freeze ignores movement keys while the menu is open (the player position is never frozen, so falls and stops stay natural).',
         ['target.freezeOnMenu'] = 'Legacy: used as freeze (on) or allow (off) only when Movement while option menu is open was never set.',
         ['target.lockCameraOnMenu'] = 'Lock the gameplay camera while the multiple-option menu is open.',
         ['target.closeMenuOutOfRange'] = 'Close the multiple-option menu when its target is no longer within reach.',

@@ -147,19 +147,20 @@ local sprites = Target._testSprites
 harness.test('multiple target options open kora_lib interact and dispatch the selected action', function()
     Config.target.freezeOnMenu = true -- the shipped default is false; the freeze is opt-in
     local selected = false
+    frozenEntities[1] = nil
     runtime.selectCandidates({
         { option = { label = 'First', icon = 'one', onSelect = function() selected = true end } },
         { option = { label = 'Second', icon = 'two', onSelect = function() end } },
     })
 
     harness.assertEqual(#interactItems, 2, 'multiple candidates must use the interact selector')
-    harness.assertTrue(frozenEntities[1], 'the player must stay in place while choosing from a target snapshot')
+    harness.assertTrue(not frozenEntities[1], 'legacy freezeOnMenu never freezes the ped position')
     harness.assertEqual(interactItems[1].label, 'First', 'the interact selector must preserve option labels')
     harness.assertTrue(type(interactItems[1].action) == 'function', 'each interact entry must dispatch its candidate')
     interactItems[1].action()
     harness.assertTrue(selected, 'the selected interact entry must run its target action')
     runtime.closeTargetMenu()
-    harness.assertFalse(frozenEntities[1], 'closing the selector must restore player movement')
+    harness.assertTrue(not frozenEntities[1], 'closing the selector leaves the ped unfrozen')
 end)
 
 harness.test('disabling targeting closes a target selector and restores player movement', function()
@@ -169,9 +170,10 @@ harness.test('disabling targeting closes a target selector and restores player m
         { option = { label = 'Second', onSelect = function() end } },
     })
 
-    harness.assertTrue(frozenEntities[1], 'opening a target selector must freeze the player')
+    harness.assertTrue(not frozenEntities[1], 'opening a target selector never freezes the player')
     Target.setEnabled(false)
-    harness.assertFalse(frozenEntities[1], 'disabling targeting must not leave the player frozen')
+    harness.assertFalse(runtime.isMenuOpen(), 'disabling targeting closes the selector')
+    harness.assertTrue(not frozenEntities[1], 'disabling targeting leaves the player unfrozen')
     Target.setEnabled(true)
     Config.target.freezeOnMenu = false
 end)
@@ -309,7 +311,7 @@ harness.test('zone candidates are matched against the aim point, not the player 
         'an aim point inside the zone must surface it regardless of where the ped is standing')
 end)
 
-harness.test('freezeOnMenu=false (the default) never freezes the ped, and true does', function()
+harness.test('freezeOnMenu never freezes the ped position, on or off', function()
     local candidates = {
         { option = { label = 'A', onSelect = function() end }, registration = {}, anchorCoords = entityCoords },
         { option = { label = 'B', onSelect = function() end }, registration = {}, anchorCoords = entityCoords },
@@ -324,9 +326,9 @@ harness.test('freezeOnMenu=false (the default) never freezes the ped, and true d
 
     Config.target.freezeOnMenu = true
     runtime.selectCandidates(candidates)
-    harness.assertTrue(frozenEntities[1], 'freezeOnMenu=true restores the freeze')
+    harness.assertTrue(not frozenEntities[1], 'freezeOnMenu=true only ignores movement keys, the position stays free')
     runtime.closeTargetMenu()
-    harness.assertTrue(not frozenEntities[1], 'closing the menu always unfreezes')
+    harness.assertTrue(not frozenEntities[1], 'closing the menu leaves the ped unfrozen')
     harness.assertEqual(helpMessages, 0, 'showCloseHint defaults to false, so no help message is shown')
     harness.assertEqual(Config.target.showCloseHint, false, 'the shipped default hides the close hint')
 
@@ -797,11 +799,11 @@ harness.test('menuMovement defaults to allow and maps legacy freezeOnMenu when u
     resetMenuInput()
 end)
 
-harness.test('menuMovement=freeze freezes the ped and disables movement controls each frame', function()
+harness.test('menuMovement=freeze disables movement controls each frame but never freezes the ped position', function()
     resetMenuInput()
     Config.target.menuMovement = 'freeze'
     runtime.selectCandidates(menuCandidates)
-    harness.assertTrue(frozenEntities[1], 'freeze mode freezes the ped')
+    harness.assertTrue(not frozenEntities[1], 'freeze mode never calls FreezeEntityPosition on the ped')
     local state = {}
     harness.assertFalse(runtime.menuInputFrame('freeze', state), 'freeze mode never closes on input')
     for _, control in ipairs({ 21, 22, 30, 31, 32, 33, 34, 35, 36, 44 }) do
@@ -809,7 +811,7 @@ harness.test('menuMovement=freeze freezes the ped and disables movement controls
     end
     harness.assertTrue(not disabledControls[1] and not disabledControls[2], 'camera stays free unless lockCameraOnMenu')
     runtime.closeTargetMenu()
-    harness.assertFalse(frozenEntities[1], 'closing releases the freeze')
+    harness.assertTrue(not frozenEntities[1], 'closing leaves the ped unfrozen')
     resetMenuInput()
 end)
 
@@ -856,13 +858,15 @@ harness.test('lockCameraOnMenu disables look controls only when enabled', functi
     resetMenuInput()
 end)
 
-harness.test('every close path releases the freeze', function()
+harness.test('every close path closes the freeze-mode menu without touching the ped position', function()
     resetMenuInput()
     Config.target.menuMovement = 'freeze'
     runtime.selectCandidates(menuCandidates)
-    harness.assertTrue(frozenEntities[1], 'frozen while open')
+    harness.assertTrue(runtime.isMenuOpen(), 'open in freeze mode')
+    harness.assertTrue(not frozenEntities[1], 'not position-frozen while open')
     Target._cancelCurrentTargeting()
-    harness.assertFalse(frozenEntities[1], 'cancelling targeting (also the path taken on resource stop) releases the freeze')
+    harness.assertFalse(runtime.isMenuOpen(), 'cancelling targeting (also the path taken on resource stop) closes the menu')
+    harness.assertTrue(not frozenEntities[1], 'and leaves the ped unfrozen')
     resetMenuInput()
 end)
 
@@ -1003,14 +1007,14 @@ harness.test('dead / last stand players cannot target or run options; disableWhi
     _G.exports = previousExports
 end)
 
-harness.test('the option menu never freezes an airborne ped and releases the freeze on leaving the ground', function()
+harness.test('the option menu never freezes the ped, grounded or airborne', function()
     resetMenuInput()
     Config.target.menuMovement = 'freeze'
     Config.target.closeWhenAirborne = true
     for _, state in ipairs({ 'falling', 'jumping', 'ragdoll', 'freefall', 'climbing', 'vaulting', 'inAir' }) do
         pedState = { [state] = true }
         runtime.selectCandidates(menuCandidates)
-        harness.assertFalse(frozenEntities[1], 'a ped that is ' .. state .. ' must not be frozen')
+        harness.assertTrue(not frozenEntities[1], 'a ped that is ' .. state .. ' must not be frozen')
         harness.assertFalse(runtime.isMenuOpen(), 'the menu must not open while ' .. state)
         runtime.closeTargetMenu()
     end
@@ -1019,11 +1023,12 @@ harness.test('the option menu never freezes an airborne ped and releases the fre
     pedState = {}
 
     runtime.selectCandidates(menuCandidates)
-    harness.assertTrue(frozenEntities[1], 'a grounded ped is frozen in freeze mode')
+    harness.assertTrue(runtime.isMenuOpen(), 'a grounded ped gets the menu in freeze mode')
+    harness.assertTrue(not frozenEntities[1], 'a grounded ped is not position-frozen in freeze mode either')
     pedState = { falling = true }
     -- the menu loop calls closeTargetMenu when it sees the ped leave the ground
     runtime.closeTargetMenu()
-    harness.assertFalse(frozenEntities[1], 'closing the menu restores movement')
+    harness.assertTrue(not frozenEntities[1], 'closing the menu leaves the ped unfrozen')
     pedState = {}
     Config.target.closeWhenAirborne = false
     resetMenuInput()

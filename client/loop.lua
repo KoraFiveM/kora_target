@@ -4,7 +4,6 @@ local holding, holdingThread, menuOpen = false, false, false
 local currentCandidates = {}
 local candidatePool = {}
 local currentRaycastEntity
-local menuPed, menuPedWasFrozen
 local menuHintShown = false
 local startWatchdog
 
@@ -53,11 +52,11 @@ end
 -- Local copies of the kora_lib cache values this file needs, kept current by
 -- onChange so no cross-resource export call runs in a loop. They fall back to
 -- natives when the cache is unavailable.
-local cachedPed, cachedInVehicle, cachedDead = nil, false, false
+local cachedPed, cachedInVehicle = nil, false
 local vehicleBlocked
 if Kora.cache and Kora.cache.onChange then
     pcall(function()
-        cachedPed, cachedInVehicle, cachedDead = Kora.cache.ped(), Kora.cache.vehicle() and true or false, Kora.cache.isDead() and true or false
+        cachedPed, cachedInVehicle = Kora.cache.ped(), Kora.cache.vehicle() and true or false
     end)
     Kora.cache.onChange('ped', function(ped) cachedPed = ped end)
     Kora.cache.onChange('vehicle', function(vehicle)
@@ -65,14 +64,6 @@ if Kora.cache and Kora.cache.onChange then
         -- Getting into a vehicle (driver or passenger) ends targeting and closes any open menu.
         if cachedInVehicle and (holding or menuOpen) and vehicleBlocked() and Target._forceRelease then
             Target._forceRelease()
-        end
-    end)
-    Kora.cache.onChange('isDead', function(dead)
-        cachedDead = dead and true or false
-        -- A dead player must never stay held in place by the option menu.
-        if cachedDead and menuPed then
-            if not menuPedWasFrozen then FreezeEntityPosition(menuPed, false) end
-            menuPed, menuPedWasFrozen = nil, nil
         end
     end)
 end
@@ -111,23 +102,6 @@ local function closeWhenAirborne()
     return Config.target.closeWhenAirborne ~= false
 end
 
-local function setMenuPositionFrozen(frozen)
-    if frozen then
-        local ped = localPed()
-        if not ped or ped == 0 then return end
-        -- Never freeze a ped that is off the ground, or one that is dead.
-        if cachedDead or pedAirborne(ped) then return end
-
-        menuPed = ped
-        menuPedWasFrozen = IsEntityPositionFrozen(ped)
-        if not menuPedWasFrozen then FreezeEntityPosition(ped, true) end
-        return
-    end
-
-    if menuPed and not menuPedWasFrozen then FreezeEntityPosition(menuPed, false) end
-    menuPed, menuPedWasFrozen = nil, nil
-end
-
 -- Resolves how the open menu treats player movement. menuMovement wins when it
 -- is a known mode; otherwise the legacy freezeOnMenu boolean maps onto it, so a
 -- server that only ever set freezeOnMenu = true keeps its freeze.
@@ -138,7 +112,9 @@ local function menuMovementMode()
     return Config.target.freezeOnMenu and 'freeze' or 'allow'
 end
 
--- Move LR/UD, sprint, jump, cover, stealth and the directional keys.
+-- Move LR/UD, sprint, jump, cover, stealth and the directional keys. menuMovement
+-- = 'freeze' only ignores these keys: the ped's position is never frozen, so a
+-- walking ped slows to a natural stop and gravity keeps working mid-air.
 local MENU_MOVE_CONTROLS = { 21, 22, 30, 31, 32, 33, 34, 35, 36, 44 }
 local MENU_LOOK_CONTROLS = { 1, 2 }
 
@@ -223,10 +199,9 @@ local function closeTargetMenu()
     if wasOpen then startPauseSuppression() end
     if menuHintShown then ClearAllHelpMessages() end
     menuHintShown = false
-    setMenuPositionFrozen(false)
 end
 
--- Never leave the ped frozen if this resource stops while a menu is open.
+-- Close an open menu if this resource stops.
 AddEventHandler('onResourceStop', function(resource)
     if resource == GetCurrentResourceName() then closeTargetMenu() end
 end)
@@ -741,7 +716,6 @@ local function selectCandidates(candidates)
     if not menuOpen then return end
     startWatchdog()
     local movementMode = menuMovementMode()
-    if movementMode == 'freeze' then setMenuPositionFrozen(true) end
 
     -- kora_lib's selector has no footer, so use a one-off native help message.
     if Config.target.showCloseHint then
@@ -761,7 +735,7 @@ local function selectCandidates(candidates)
             local now = GetGameTimer()
             if now >= nextRangeCheck then
                 nextRangeCheck = now + Config.target.tickActive
-                -- Leaving the ground closes the menu, which also lifts any freeze.
+                -- closeWhenAirborne: leaving the ground closes the menu.
                 if closeWhenAirborne() and pedAirborne() then break end
                 if Config.target.closeMenuOutOfRange then
                     if not menuTargetInRange(candidates) then break end
