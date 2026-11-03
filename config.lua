@@ -49,6 +49,12 @@ Config.target = {
     -- downed player open the eye, with only these options listed.
     allowWhileDead = {},
 
+    -- true (default): targeting cannot be started while the player is seated in a
+    -- vehicle (driver or passenger), and an open eye or option menu closes when
+    -- they get in. Stops ATMs, peds and other world interactions being used from
+    -- a car. Set false to allow targeting from inside vehicles.
+    disableInVehicle = true,
+
     maxDistance = 10.0,            -- meters; Kora.raycast.fromCamera's max reach while the hold key is down
     defaultOptionDistance = configNumber and configNumber(2.5, {
         label = 'Default option distance',
@@ -195,6 +201,7 @@ if Kora and Kora.config and Kora.config.adopt then
     Config.target.menuMovement = Kora.config.enum(menuMovementDefault, { label = 'Movement while option menu is open', advanced = false, options = { 'freeze', 'close', 'allow' } })
     Config.target.lockCameraOnMenu = Kora.config.boolean(Config.target.lockCameraOnMenu, { label = 'Lock camera while option menu is open', advanced = false })
     Config.target.closeMenuOutOfRange = Kora.config.boolean(Config.target.closeMenuOutOfRange, { label = 'Close option menu when out of range', advanced = false })
+    Config.target.disableInVehicle = Kora.config.boolean(Config.target.disableInVehicle, { label = 'Disable targeting inside vehicles', advanced = false })
     Config.target.closeWhenAirborne = Kora.config.boolean(Config.target.closeWhenAirborne, { label = 'Cancel targeting when off the ground', advanced = false })
     Config.target.rangeTolerance = Kora.config.number(Config.target.rangeTolerance, { label = 'Out-of-range tolerance (metres)', advanced = true, min = 0 })
     Config.target.showCloseHint = Kora.config.boolean(Config.target.showCloseHint, { label = 'Show option menu close hint', advanced = false })
@@ -246,6 +253,7 @@ if Kora and Kora.config and Kora.config.adopt then
         ['target.freezeOnMenu'] = 'Legacy: used as freeze (on) or allow (off) only when Movement while option menu is open was never set.',
         ['target.lockCameraOnMenu'] = 'Lock the gameplay camera while the multiple-option menu is open.',
         ['target.closeMenuOutOfRange'] = 'Close the multiple-option menu when its target is no longer within reach.',
+        ['target.disableInVehicle'] = 'Players seated in a vehicle (driver or passenger) cannot use targeting, and an open targeting prompt or option menu closes when they get in. Turn off to allow targeting from inside vehicles.',
         ['target.closeWhenAirborne'] = 'Off (default): targeting and the option menu keep working while the player jumps or falls. On: cancel the targeting prompt and the option menu when the player falls, jumps, ragdolls, parachutes or climbs. A player is never held in place while off the ground either way.',
         ['target.rangeTolerance'] = 'Extra distance allowed beyond an option\'s own range before the open menu closes or a chosen option is refused as out of range.',
         ['target.showCloseHint'] = 'Show the GTA help message explaining how to close the multiple-option menu for a few seconds when it opens. Off by default; Escape still closes the menu either way.',

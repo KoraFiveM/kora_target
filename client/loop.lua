@@ -54,12 +54,19 @@ end
 -- onChange so no cross-resource export call runs in a loop. They fall back to
 -- natives when the cache is unavailable.
 local cachedPed, cachedInVehicle, cachedDead = nil, false, false
+local vehicleBlocked
 if Kora.cache and Kora.cache.onChange then
     pcall(function()
         cachedPed, cachedInVehicle, cachedDead = Kora.cache.ped(), Kora.cache.vehicle() and true or false, Kora.cache.isDead() and true or false
     end)
     Kora.cache.onChange('ped', function(ped) cachedPed = ped end)
-    Kora.cache.onChange('vehicle', function(vehicle) cachedInVehicle = vehicle and true or false end)
+    Kora.cache.onChange('vehicle', function(vehicle)
+        cachedInVehicle = vehicle and true or false
+        -- Getting into a vehicle (driver or passenger) ends targeting and closes any open menu.
+        if cachedInVehicle and (holding or menuOpen) and vehicleBlocked() and Target._forceRelease then
+            Target._forceRelease()
+        end
+    end)
     Kora.cache.onChange('isDead', function(dead)
         cachedDead = dead and true or false
         -- A dead player must never stay held in place by the option menu.
@@ -73,6 +80,12 @@ end
 local function localPed()
     if cachedPed and cachedPed ~= 0 then return cachedPed end
     return PlayerPedId()
+end
+
+-- Config.target.disableInVehicle: no targeting while seated in a vehicle. Reads
+-- the kora_lib cache copy kept current by onChange, never a native.
+vehicleBlocked = function()
+    return cachedInVehicle and Config.target.disableInVehicle ~= false
 end
 
 local function nativeTrue(value)
@@ -684,6 +697,7 @@ local function menuTargetInRange(candidates)
 end
 
 local function runOption(candidate)
+    if vehicleBlocked() then return end
     -- The snapshot may be older than the click: an option whose target has since
     -- gone out of reach (or vanished) must not run.
     if candidateInRange(candidate, GetEntityCoords(localPed())) == false then return end
@@ -704,7 +718,7 @@ end
 ---multiple options use kora_lib's game-input-driven interact selector, so the
 ---player can keep camera control and choose with scroll/arrows plus E.
 local function selectCandidates(candidates)
-    if #candidates == 0 then return end
+    if #candidates == 0 or vehicleBlocked() then return end
     -- Releasing the key mid-fall or mid-jump neither opens the menu nor runs an option.
     if closeWhenAirborne() and pedAirborne() then return end
 
@@ -929,7 +943,7 @@ if RegisterNUICallback then
 end
 
 local function startTargeting()
-    if holdingThread or Target.interactionsLocked() or (Target.isDowned(true) and #allowedWhileDown() == 0) then
+    if holdingThread or vehicleBlocked() or Target.interactionsLocked() or (Target.isDowned(true) and #allowedWhileDown() == 0) then
         holding = false
         Target.active = false
         resetRuntimeState()
@@ -999,7 +1013,7 @@ local targetKeybind = {
     defaultMapper = 'keyboard',
     defaultKey = Config.target.keybind.defaultKey,
     onPressed = function()
-        if Target.interactionsLocked() or (Target.isDowned(true) and #allowedWhileDown() == 0) then
+        if vehicleBlocked() or Target.interactionsLocked() or (Target.isDowned(true) and #allowedWhileDown() == 0) then
             holding = false
             Target.active = false
             resetRuntimeState()
@@ -1111,6 +1125,7 @@ if Config.target.testMode then
         isHolding = function() return holding end,
         setHolding = function(value) holding = value end,
         menuMovementMode = menuMovementMode,
+        setInVehicle = function(value) cachedInVehicle = value and true or false end,
         menuInputFrame = menuInputFrame,
         suppressPauseFrame = suppressPauseFrame,
         pauseSuppressUntil = function() return pauseSuppressUntil end,

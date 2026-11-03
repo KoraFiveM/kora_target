@@ -11,6 +11,7 @@ local raycastResponses, raycastFlags, raycastProbes = {}, {}, {}
 local zoneHandles, zoneCalls = {}, {}
 local frozenEntities = {}
 local configBindings = {}
+local cacheHandlers = {}
 
 -- Mirrors kora_lib's own zone handle shape (client/state.lua only relies on
 -- .remove and .contains) without pulling in kora_lib's real box/sphere/poly
@@ -58,6 +59,13 @@ _G.Kora = {
         end,
     },
     nui = { send = function() end },
+    -- Minimal kora_lib cache: loop.lua keeps local copies current through onChange.
+    cache = {
+        ped = function() return 1 end,
+        vehicle = function() return false end,
+        isDead = function() return false end,
+        onChange = function(key, handler) cacheHandlers[key] = handler end,
+    },
     interact = {
         open = function(items)
             _G.interactItems = items
@@ -1080,6 +1088,49 @@ harness.test('the shipped defaults never freeze or interrupt the player', functi
     harness.assertEqual(Config.target.freezeOnMenu, false, 'freezeOnMenu defaults to off')
     harness.assertEqual(Config.target.closeMenuOutOfRange, true, 'the menu still closes once out of range')
     harness.assertEqual(Config.target.rangeTolerance, 0.5, 'rangeTolerance default')
+end)
+
+harness.test('disableInVehicle blocks targeting in a vehicle and closes the open menu on entering', function()
+    harness.assertEqual(Config.target.disableInVehicle, true, 'on by default')
+    runtime.forceRelease()
+    local ran = 0
+    local candidate = { option = { label = 'One', onSelect = function() ran = ran + 1 end }, registration = {}, anchorCoords = entityCoords }
+    local two = { option = { label = 'Two', onSelect = function() end }, registration = {}, anchorCoords = entityCoords }
+
+    runtime.setInVehicle(true)
+    commands['+playerTarget']()
+    harness.assertFalse(Target.active, 'the key does nothing while seated in a vehicle')
+    harness.assertFalse(runtime.isHolding(), 'no hold starts in a vehicle')
+    runtime.selectCandidates({ candidate })
+    harness.assertEqual(ran, 0, 'no option runs in a vehicle')
+    runtime.selectCandidates({ candidate, two })
+    harness.assertFalse(runtime.isMenuOpen(), 'the option menu does not open in a vehicle')
+
+    Config.target.disableInVehicle = false
+    runtime.selectCandidates({ candidate })
+    harness.assertEqual(ran, 1, 'disableInVehicle=false allows targeting from a vehicle')
+    Config.target.disableInVehicle = true
+
+    runtime.setInVehicle(false)
+    runtime.selectCandidates({ candidate })
+    harness.assertEqual(ran, 2, 'on foot the option runs again')
+    runtime.forceRelease()
+
+    -- Getting into a vehicle through the kora_lib cache closes an open menu and a running hold.
+    runtime.selectCandidates({ candidate, two })
+    harness.assertTrue(runtime.isMenuOpen(), 'menu opens on foot')
+    runtime.setHolding(true)
+    local sent = {}
+    local previousExecute = _G.ExecuteCommand
+    _G.ExecuteCommand = function(command) sent[#sent + 1] = command end
+    cacheHandlers.vehicle(42)
+    _G.ExecuteCommand = previousExecute
+    harness.assertFalse(runtime.isMenuOpen(), 'entering a vehicle closes the open menu')
+    harness.assertFalse(runtime.isHolding(), 'entering a vehicle ends the hold')
+    harness.assertEqual(sent[1], '-' .. Config.target.keybind.command, 'the keybind release is re-sent')
+    cacheHandlers.vehicle(false)
+    runtime.selectCandidates({ candidate })
+    harness.assertEqual(ran, 3, 'leaving the vehicle re-enables targeting')
 end)
 
 harness.report('qbtarget runtime')
