@@ -52,7 +52,8 @@ Config.target = {
     -- true (default): targeting cannot be started while the player is seated in a
     -- vehicle (driver or passenger), and an open eye or option menu closes when
     -- they get in. Stops ATMs, peds and other world interactions being used from
-    -- a car. Set false to allow targeting from inside vehicles.
+    -- a car. Set false to allow targeting from inside vehicles. Individual options
+    -- (or whole zones) can opt back in with allowInVehicle = true; see docs.md.
     disableInVehicle = true,
 
     maxDistance = 10.0,            -- meters; Kora.raycast.fromCamera's max reach while the hold key is down
@@ -254,7 +255,7 @@ if Kora and Kora.config and Kora.config.adopt then
         ['target.freezeOnMenu'] = 'Legacy: used as freeze (on) or allow (off) only when Movement while option menu is open was never set.',
         ['target.lockCameraOnMenu'] = 'Lock the gameplay camera while the multiple-option menu is open.',
         ['target.closeMenuOutOfRange'] = 'Close the multiple-option menu when its target is no longer within reach.',
-        ['target.disableInVehicle'] = 'Players seated in a vehicle (driver or passenger) cannot use targeting, and an open targeting prompt or option menu closes when they get in. Turn off to allow targeting from inside vehicles.',
+        ['target.disableInVehicle'] = 'Players seated in a vehicle (driver or passenger) cannot use targeting, and an open targeting prompt or option menu closes when they get in. Turn off to allow targeting from inside vehicles. Options and zones that set allowInVehicle = true stay usable while seated either way.',
         ['target.closeWhenAirborne'] = 'Off (default): targeting and the option menu keep working while the player jumps or falls. On: cancel the targeting prompt and the option menu when the player falls, jumps, ragdolls, parachutes or climbs. A player is never held in place while off the ground either way.',
         ['target.rangeTolerance'] = 'Extra distance allowed beyond an option\'s own range before the open menu closes or a chosen option is refused as out of range.',
         ['target.showCloseHint'] = 'Show the GTA help message explaining how to close the multiple-option menu for a few seconds when it opens. Off by default; Escape still closes the menu either way.',

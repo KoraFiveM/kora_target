@@ -6,6 +6,7 @@
 ---@field distance? number Overrides the registration's own default distance.
 ---@field bones? string[] Restricts this option to specific bone names.
 ---@field canInteract? fun(entity: number|nil, distance: number, data: any): boolean
+---@field allowInVehicle? boolean Keeps this option usable while the player is seated in a vehicle even though Config.target.disableInVehicle is on. Overrides the zone's own allowInVehicle.
 ---@field onSelect fun(entity: number|nil, data: any)
 ---@field data? any
 ---@field item? string Opaque passthrough -- never interpreted, see docs.md.
@@ -123,9 +124,18 @@ local function validateOptions(options)
             ("options[%d].distance must be a number."):format(i))
         assert(option.bones == nil or type(option.bones) == "table",
             ("options[%d].bones must be an array of bone names."):format(i))
+        assert(option.allowInVehicle == nil or type(option.allowInVehicle) == "boolean",
+            ("options[%d].allowInVehicle must be a boolean."):format(i))
     end
 
     return options
+end
+
+-- Zone-level default for options that do not set allowInVehicle themselves.
+local function zoneAllowInVehicle(zoneOptions)
+    assert(zoneOptions.allowInVehicle == nil or type(zoneOptions.allowInVehicle) == "boolean",
+        "zoneOptions.allowInVehicle must be a boolean.")
+    return zoneOptions.allowInVehicle
 end
 
 ---Internal compatibility hook: atomically replaces a live registration's
@@ -696,6 +706,7 @@ end
 ---@field distance? number
 ---@field debug? boolean
 ---@field drawSprite? boolean Set false to hide this zone's configured sprite.
+---@field allowInVehicle? boolean Default for every option in this zone that does not set its own allowInVehicle; true keeps them usable while seated in a vehicle.
 
 ---@param zoneOptions QBTargetBoxZoneOptions
 ---@return integer id
@@ -705,6 +716,7 @@ function Target.addBoxZone(zoneOptions)
     assert(isCoordsLike(zoneOptions.size), "addBoxZone requires zoneOptions.size to be a table with numeric x/y/z.")
 
     local options = validateOptions(zoneOptions.options)
+    local allowInVehicle = zoneAllowInVehicle(zoneOptions)
     local id = nextId()
 
     -- Captured before calling Kora.zones.box, which would attribute the zone to kora_target.
@@ -723,6 +735,7 @@ function Target.addBoxZone(zoneOptions)
         kind = "zone",
         options = options,
         distance = zoneOptions.distance,
+        allowInVehicle = allowInVehicle,
         zoneHandle = zoneHandle,
         spriteCoords = copyCoords(zoneOptions.coords),
         drawSprite = zoneOptions.drawSprite ~= false,
@@ -740,6 +753,7 @@ end
 ---@field distance? number
 ---@field debug? boolean
 ---@field drawSprite? boolean Set false to hide this zone's configured sprite.
+---@field allowInVehicle? boolean Default for every option in this zone that does not set its own allowInVehicle; true keeps them usable while seated in a vehicle.
 
 ---@param zoneOptions QBTargetSphereZoneOptions
 ---@return integer id
@@ -750,6 +764,7 @@ function Target.addSphereZone(zoneOptions)
         "addSphereZone requires zoneOptions.radius to be a positive number.")
 
     local options = validateOptions(zoneOptions.options)
+    local allowInVehicle = zoneAllowInVehicle(zoneOptions)
     local id = nextId()
     local owner = GetInvokingResource() or GetCurrentResourceName()
 
@@ -765,6 +780,7 @@ function Target.addSphereZone(zoneOptions)
         kind = "zone",
         options = options,
         distance = zoneOptions.distance,
+        allowInVehicle = allowInVehicle,
         zoneHandle = zoneHandle,
         spriteCoords = copyCoords(zoneOptions.coords),
         drawSprite = zoneOptions.drawSprite ~= false,
@@ -784,6 +800,7 @@ end
 ---@field distance? number
 ---@field debug? boolean
 ---@field drawSprite? boolean Set false to hide this zone's configured sprite.
+---@field allowInVehicle? boolean Default for every option in this zone that does not set its own allowInVehicle; true keeps them usable while seated in a vehicle.
 
 ---@param zoneOptions QBTargetPolyZoneOptions
 ---@return integer id
@@ -796,6 +813,7 @@ function Target.addPolyZone(zoneOptions)
     end
 
     local options = validateOptions(zoneOptions.options)
+    local allowInVehicle = zoneAllowInVehicle(zoneOptions)
     local id = nextId()
     local owner = GetInvokingResource() or GetCurrentResourceName()
 
@@ -813,6 +831,7 @@ function Target.addPolyZone(zoneOptions)
         kind = "zone",
         options = options,
         distance = zoneOptions.distance,
+        allowInVehicle = allowInVehicle,
         zoneHandle = zoneHandle,
         -- Callers may place the icon at the counter instead of the poly centre.
         spriteCoords = zoneOptions.spriteCoords and copyCoords(zoneOptions.spriteCoords) or polySpriteCoords(zoneOptions.points),

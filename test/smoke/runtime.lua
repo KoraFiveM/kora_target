@@ -1138,4 +1138,131 @@ harness.test('disableInVehicle blocks targeting in a vehicle and closes the open
     harness.assertEqual(ran, 3, 'leaving the vehicle re-enables targeting')
 end)
 
+harness.test('allowInVehicle keeps opted-in options usable while seated and nothing else', function()
+    clearZones()
+    runtime.forceRelease()
+    local denied = 0
+    local ran = { atm = 0, customise = 0, zoneLevel = 0, overridden = 0 }
+    local idPlain = Target.addBoxZone({
+        coords = { x = 3, y = 0, z = 0 }, size = { x = 2, y = 2, z = 2 }, distance = 10,
+        options = {{
+            label = 'ATM', canInteract = function() denied = denied + 1; return true end,
+            onSelect = function() ran.atm = ran.atm + 1 end,
+        }},
+    })
+    zoneHandles[#zoneHandles].contains = function() return true end
+    local idOption = Target.addBoxZone({
+        coords = { x = 3, y = 0, z = 0 }, size = { x = 2, y = 2, z = 2 }, distance = 10,
+        options = {{ label = 'Customise vehicle', allowInVehicle = true, onSelect = function() ran.customise = ran.customise + 1 end }},
+    })
+    zoneHandles[#zoneHandles].contains = function() return true end
+    local idZone = Target.addBoxZone({
+        coords = { x = 3, y = 0, z = 0 }, size = { x = 2, y = 2, z = 2 }, distance = 10, allowInVehicle = true,
+        options = {
+            { label = 'Zone default', onSelect = function() ran.zoneLevel = ran.zoneLevel + 1 end },
+            { label = 'Opted out', allowInVehicle = false, onSelect = function() ran.overridden = ran.overridden + 1 end },
+        },
+    })
+    zoneHandles[#zoneHandles].contains = function() return true end
+
+    local point = { x = 3, y = 0, z = 0 }
+    local function labels(candidates)
+        local out = {}
+        for i, candidate in ipairs(candidates) do out[i] = candidate.option.label end
+        table.sort(out)
+        return table.concat(out, '|')
+    end
+
+    runtime.setInVehicle(false)
+    harness.assertEqual(labels(runtime.resolveCandidates(true, nil, point, now, point)),
+        'ATM|Customise vehicle|Opted out|Zone default', 'on foot every option resolves')
+
+    runtime.setInVehicle(true)
+    denied = 0
+    local seated = runtime.resolveCandidates(true, nil, point, now + 1, point)
+    harness.assertEqual(labels(seated), 'Customise vehicle|Zone default',
+        'seated, only option-level and zone-level opt-ins resolve; option false beats zone true')
+    harness.assertEqual(denied, 0, 'a blocked option never runs its canInteract')
+
+    -- The key still starts a hold seated because opted-in options exist.
+    harness.assertFalse(runtime.targetingBlocked(), 'the key may start targeting in a vehicle when an option opted in')
+
+    -- Selection and the option menu only ever carry opted-in options, even from a stale on-foot snapshot.
+    local snapshot = {}
+    for _, registrationId in ipairs({ idPlain, idOption, idZone }) do
+        local registration = Target.registrations[registrationId]
+        for _, option in ipairs(registration.options) do
+            snapshot[#snapshot + 1] = { option = option, registration = registration, anchorCoords = entityCoords }
+        end
+    end
+    runtime.selectCandidates({ snapshot[1] })
+    harness.assertEqual(ran.atm, 0, 'a non-opted-in option does not run seated')
+    runtime.selectCandidates({ snapshot[2] })
+    harness.assertEqual(ran.customise, 1, 'an allowInVehicle option runs seated')
+    runtime.selectCandidates({ snapshot[3] })
+    harness.assertEqual(ran.zoneLevel, 1, 'a zone-level allowInVehicle option runs seated')
+    runtime.selectCandidates({ snapshot[4] })
+    harness.assertEqual(ran.overridden, 0, 'an option that sets allowInVehicle=false stays blocked under an opted-in zone')
+    _G.interactItems = nil
+    runtime.selectCandidates(snapshot)
+    harness.assertTrue(runtime.isMenuOpen(), 'the option menu opens seated for the opted-in options')
+    harness.assertEqual(#_G.interactItems, 2, 'the menu lists only the two opted-in options')
+    runtime.forceRelease()
+
+    -- Entering a vehicle: a menu of only opted-in options stays, a mixed one closes.
+    runtime.setInVehicle(false)
+    runtime.selectCandidates({ snapshot[2], snapshot[3] })
+    harness.assertTrue(runtime.isMenuOpen(), 'opted-in menu opens on foot')
+    cacheHandlers.vehicle(42)
+    harness.assertTrue(runtime.isMenuOpen(), 'an all-allowInVehicle menu survives entering a vehicle')
+    cacheHandlers.vehicle(false)
+    runtime.forceRelease()
+
+    runtime.selectCandidates({ snapshot[1], snapshot[2] })
+    harness.assertTrue(runtime.isMenuOpen(), 'mixed menu opens on foot')
+    local previousExecute = _G.ExecuteCommand
+    _G.ExecuteCommand = function() end
+    cacheHandlers.vehicle(42)
+    _G.ExecuteCommand = previousExecute
+    harness.assertFalse(runtime.isMenuOpen(), 'a menu holding a non-opted-in option closes on entering a vehicle')
+    cacheHandlers.vehicle(false)
+    runtime.forceRelease()
+
+    -- A running hold survives boarding while opted-in options exist.
+    runtime.setHolding(true)
+    cacheHandlers.vehicle(42)
+    harness.assertTrue(runtime.isHolding(), 'the hold continues for opted-in options')
+    cacheHandlers.vehicle(false)
+    runtime.forceRelease()
+
+    -- With the opted-in registrations gone, the old full block applies again.
+    Target.destroyRegistration(idOption)
+    Target.destroyRegistration(idZone)
+    runtime.setInVehicle(true)
+    harness.assertTrue(runtime.targetingBlocked(), 'targeting stays fully off seated once no option opted in')
+    harness.assertEqual(#runtime.resolveCandidates(true, nil, point, now + 2, point), 0, 'ATM stays blocked seated')
+
+    Config.target.disableInVehicle = false
+    harness.assertEqual(#runtime.resolveCandidates(true, nil, point, now + 3, point), 1, 'disableInVehicle=false resolves everything again')
+    Config.target.disableInVehicle = true
+    runtime.setInVehicle(false)
+    Target.destroyRegistration(idPlain)
+    runtime.forceRelease()
+end)
+
+harness.test('allowInVehicle must be a boolean on options and zones', function()
+    local before = #zoneCalls
+    local ok = pcall(Target.addBoxZone, {
+        coords = { x = 0, y = 0, z = 0 }, size = { x = 1, y = 1, z = 1 },
+        options = {{ label = 'Bad', allowInVehicle = 'yes', onSelect = function() end }},
+    })
+    harness.assertFalse(ok, 'a non-boolean option allowInVehicle is rejected')
+    ok = pcall(Target.addBoxZone, {
+        coords = { x = 0, y = 0, z = 0 }, size = { x = 1, y = 1, z = 1 }, allowInVehicle = 1,
+        options = {{ label = 'Bad', onSelect = function() end }},
+    })
+    harness.assertFalse(ok, 'a non-boolean zone allowInVehicle is rejected')
+    harness.assertEqual(#zoneCalls, before, 'a rejected zone never creates a kora_lib zone')
+end)
+
 harness.report('qbtarget runtime')

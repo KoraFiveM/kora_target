@@ -52,18 +52,28 @@ end
 -- Local copies of the kora_lib cache values this file needs, kept current by
 -- onChange so no cross-resource export call runs in a loop. They fall back to
 -- natives when the cache is unavailable.
-local cachedPed, cachedInVehicle = nil, false
-local vehicleBlocked
+local cachedPed, cachedInVehicle, cachedVehicle = nil, false, nil
+local vehicleBlocked, releaseOnVehicleEntry
+-- The candidates behind the open option menu, kept so entering a vehicle can tell
+-- whether every one of them is allowInVehicle.
+local menuCandidates = nil
 if Kora.cache and Kora.cache.onChange then
     pcall(function()
-        cachedPed, cachedInVehicle = Kora.cache.ped(), Kora.cache.vehicle() and true or false
+        local vehicle = Kora.cache.vehicle()
+        cachedPed, cachedInVehicle, cachedVehicle = Kora.cache.ped(), vehicle and true or false, vehicle or nil
     end)
     Kora.cache.onChange('ped', function(ped) cachedPed = ped end)
     Kora.cache.onChange('vehicle', function(vehicle)
-        cachedInVehicle = vehicle and true or false
-        -- Getting into a vehicle (driver or passenger) ends targeting and closes any open menu.
-        if cachedInVehicle and (holding or menuOpen) and vehicleBlocked() and Target._forceRelease then
-            Target._forceRelease()
+        cachedInVehicle, cachedVehicle = vehicle and true or false, vehicle or nil
+        -- Getting into a vehicle (driver or passenger) ends targeting and closes any open
+        -- menu, unless only allowInVehicle options are in play.
+        if cachedInVehicle and (holding or menuOpen) and vehicleBlocked() then
+            if releaseOnVehicleEntry() then
+                if Target._forceRelease then Target._forceRelease() end
+            elseif holding and not menuOpen then
+                -- Keep holding, but drop candidates resolved on foot so the next pass re-filters them.
+                resetRuntimeState()
+            end
         end
     end)
 end
@@ -77,6 +87,47 @@ end
 -- the kora_lib cache copy kept current by onChange, never a native.
 vehicleBlocked = function()
     return cachedInVehicle and Config.target.disableInVehicle ~= false
+end
+
+-- An option's own allowInVehicle wins; otherwise the registration's (zone-level) value applies.
+local function allowsInVehicle(registration, option)
+    local flag = option and option.allowInVehicle
+    if flag == nil then flag = registration and registration.allowInVehicle end
+    return flag == true
+end
+
+-- True when any live registration holds an allowInVehicle option. Rescanned only when the
+-- registrations change, so seated targeting stays fully off (no resolver) when none exist.
+local vehicleOptionsRevision, vehicleOptionsFound = nil, false
+local function vehicleOptionsExist()
+    local revision = Target.registrationRevision or 0
+    if vehicleOptionsRevision == revision then return vehicleOptionsFound end
+    vehicleOptionsRevision, vehicleOptionsFound = revision, false
+    for _, registration in pairs(Target.registrations) do
+        for _, option in ipairs(registration.options or {}) do
+            if allowsInVehicle(registration, option) then
+                vehicleOptionsFound = true
+                return true
+            end
+        end
+    end
+    return false
+end
+
+-- True when targeting must stay off right now: seated with the gate on and nothing opted in.
+local function targetingBlocked()
+    return vehicleBlocked() and not vehicleOptionsExist()
+end
+
+releaseOnVehicleEntry = function()
+    if not vehicleBlocked() then return false end
+    if menuOpen then
+        for _, candidate in ipairs(menuCandidates or {}) do
+            if not allowsInVehicle(candidate.registration, candidate.option) then return true end
+        end
+        return false
+    end
+    return not vehicleOptionsExist()
 end
 
 local function nativeTrue(value)
@@ -196,6 +247,7 @@ local function closeTargetMenu()
     local wasOpen = menuOpen
     if menuOpen then Kora.interact.close() end
     menuOpen = false
+    menuCandidates = nil
     if wasOpen then startPauseSuppression() end
     if menuHintShown then ClearAllHelpMessages() end
     menuHintShown = false
@@ -437,9 +489,11 @@ local function appendCandidates(candidates, nearestIndex, registration, entity, 
     distSq, toleranceSq, now, boneCache)
     local registrationBones = registration.kind == 'globalBone' and Target.byGlobalBone[registration.id] or nil
     local distance
+    local seatedBlocked = vehicleBlocked()
 
     for index, option in ipairs(registration.options) do
         if Config.target.diagnostics then diagnostics.options = diagnostics.options + 1 end
+        if seatedBlocked and not allowsInVehicle(registration, option) then goto nextOption end
         local maxDistance = option.distance or registration.distance or Config.target.defaultOptionDistance
         if distSq <= maxDistance * maxDistance and boneMatches(entity, option.bones or registrationBones, anchorCoords, toleranceSq, boneCache) then
             -- canInteract receives distance for compatibility; pay the sqrt only
@@ -458,6 +512,7 @@ local function appendCandidates(candidates, nearestIndex, registration, entity, 
                 if not nearestIndex or distSq < candidates[nearestIndex].distanceSq then nearestIndex = candidateIndex end
             end
         end
+        ::nextOption::
     end
     return nearestIndex
 end
@@ -506,6 +561,8 @@ local function aimSnapshot()
     local flatLength = math.abs(math.cos(pitch))
     local distance = Config.target.maxDistance
     aimState.ped, aimState.pedCoords = ped, GetEntityCoords(ped)
+    -- Seated, the ray starts inside the player's own vehicle, which would otherwise swallow it.
+    aimState.ignore = cachedInVehicle and cachedVehicle and cachedVehicle ~= 0 and cachedVehicle or ped
     aimState.cam, aimState.rot = cam, rot
     aimState.destination.x = cam.x - math.sin(yaw) * flatLength * distance
     aimState.destination.y = cam.y + math.cos(yaw) * flatLength * distance
@@ -516,14 +573,14 @@ end
 local function raycastTarget(snapshot, now)
     snapshot = snapshot or aimSnapshot()
     now = now or GetGameTimer()
-    local broadProbe = Kora.raycast.start(snapshot.cam, snapshot.destination, 511, snapshot.ped)
+    local broadProbe = Kora.raycast.start(snapshot.cam, snapshot.destination, 511, snapshot.ignore or snapshot.ped)
     local hit, hitCoords, entity = Kora.raycast.await(broadProbe)
     if entity and entity ~= 0 then return hit, hitCoords, entity end
 
     local interval = Config.target.entityProbeInterval or 0
     if interval > 0 and now - lastEntityProbeAt < interval then return hit, hitCoords, entity end
     lastEntityProbeAt = now
-    local entityProbe = Kora.raycast.start(snapshot.cam, snapshot.destination, 26, snapshot.ped)
+    local entityProbe = Kora.raycast.start(snapshot.cam, snapshot.destination, 26, snapshot.ignore or snapshot.ped)
 
     local entityHit, entityCoords, entityHandle = Kora.raycast.await(entityProbe)
     if not (entityHit and entityHandle and entityHandle ~= 0) then return hit, hitCoords, entity end
@@ -672,7 +729,7 @@ local function menuTargetInRange(candidates)
 end
 
 local function runOption(candidate)
-    if vehicleBlocked() then return end
+    if vehicleBlocked() and not allowsInVehicle(candidate.registration, candidate.option) then return end
     -- The snapshot may be older than the click: an option whose target has since
     -- gone out of reach (or vanished) must not run.
     if candidateInRange(candidate, GetEntityCoords(localPed())) == false then return end
@@ -693,7 +750,15 @@ end
 ---multiple options use kora_lib's game-input-driven interact selector, so the
 ---player can keep camera control and choose with scroll/arrows plus E.
 local function selectCandidates(candidates)
-    if #candidates == 0 or vehicleBlocked() then return end
+    if vehicleBlocked() then
+        -- The snapshot may predate boarding: keep only the options that opted in.
+        local allowed = {}
+        for _, candidate in ipairs(candidates) do
+            if allowsInVehicle(candidate.registration, candidate.option) then allowed[#allowed + 1] = candidate end
+        end
+        candidates = allowed
+    end
+    if #candidates == 0 then return end
     -- Releasing the key mid-fall or mid-jump neither opens the menu nor runs an option.
     if closeWhenAirborne() and pedAirborne() then return end
 
@@ -714,6 +779,7 @@ local function selectCandidates(candidates)
 
     menuOpen = Kora.interact.open(items)
     if not menuOpen then return end
+    menuCandidates = candidates
     startWatchdog()
     local movementMode = menuMovementMode()
 
@@ -917,7 +983,7 @@ if RegisterNUICallback then
 end
 
 local function startTargeting()
-    if holdingThread or vehicleBlocked() or Target.interactionsLocked() or (Target.isDowned(true) and #allowedWhileDown() == 0) then
+    if holdingThread or targetingBlocked() or Target.interactionsLocked() or (Target.isDowned(true) and #allowedWhileDown() == 0) then
         holding = false
         Target.active = false
         resetRuntimeState()
@@ -987,7 +1053,7 @@ local targetKeybind = {
     defaultMapper = 'keyboard',
     defaultKey = Config.target.keybind.defaultKey,
     onPressed = function()
-        if vehicleBlocked() or Target.interactionsLocked() or (Target.isDowned(true) and #allowedWhileDown() == 0) then
+        if targetingBlocked() or Target.interactionsLocked() or (Target.isDowned(true) and #allowedWhileDown() == 0) then
             holding = false
             Target.active = false
             resetRuntimeState()
@@ -1100,6 +1166,7 @@ if Config.target.testMode then
         setHolding = function(value) holding = value end,
         menuMovementMode = menuMovementMode,
         setInVehicle = function(value) cachedInVehicle = value and true or false end,
+        targetingBlocked = targetingBlocked,
         menuInputFrame = menuInputFrame,
         suppressPauseFrame = suppressPauseFrame,
         pauseSuppressUntil = function() return pauseSuppressUntil end,

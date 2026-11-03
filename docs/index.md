@@ -196,9 +196,9 @@ Targets **any** entity, of any type, that has a matching bone (e.g. every vehicl
 ### `addTargetBone(entity, bone, options, defaultDistance?)`
 Sugar over `addEntity`: registers `options` on `entity`, forcing every option onto `bone` specifically.
 
-### `addBoxZone({coords, size, rotation?, options, distance?, debug?, drawSprite?})`
-### `addSphereZone({coords, radius, options, distance?, debug?, drawSprite?})`
-### `addPolyZone({points, thickness?, minZ?, maxZ?, options, distance?, debug?, drawSprite?})`
+### `addBoxZone({coords, size, rotation?, options, distance?, debug?, drawSprite?, allowInVehicle?})`
+### `addSphereZone({coords, radius, options, distance?, debug?, drawSprite?, allowInVehicle?})`
+### `addPolyZone({points, thickness?, minZ?, maxZ?, options, distance?, debug?, drawSprite?, allowInVehicle?})`
 Zone-based targets, backed by `Kora.zones.box/sphere/poly` — no aiming required, just aiming at (not necessarily standing inside) the zone. Returns the registration `id`.
 
 Set `Config.target.debug = true` to outline every target zone while developing;
@@ -232,6 +232,7 @@ Every `add*`/zone constructor takes an `options` array of:
     distance = 2.0,                -- optional, overrides the registration's own default
     bones = { "boot" },            -- optional, restricts this option to specific bones
     canInteract = function(entity, distance, data) return true end,  -- optional
+    allowInVehicle = true,         -- optional, keeps this option usable while seated in a vehicle (see Config.target.disableInVehicle)
     onSelect = function(entity, data) ... end,  -- required
     data = { foo = "bar" },        -- optional, passed through to canInteract/onSelect
 }

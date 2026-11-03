@@ -17,6 +17,8 @@ Targeting never freezes or interrupts player movement by default: walking, sprin
 
 `Config.target.disableInVehicle` (default `true`) stops targeting while the player is seated in a vehicle, as driver or passenger, so ATMs, peds and other world interactions cannot be used from a car. The state comes from kora_lib's `cache.vehicle` (no polling): the key does nothing while seated, and an open eye or option menu closes as soon as the player gets in. Set it to `false` to allow targeting from inside vehicles.
 
+**Opting an interaction back in.** With `disableInVehicle` on, an option (or a whole zone) can still work while seated by setting `allowInVehicle = true`. Put it on an individual option (`options = {{ label = ..., allowInVehicle = true, onSelect = ... }}`), or on the zone table passed to `addBoxZone`/`addSphereZone`/`addPolyZone` as a default for all its options (`addBoxZone({ coords = ..., size = ..., allowInVehicle = true, options = ... })`); an option's own `allowInVehicle` (including `false`) overrides the zone's. Any native `add*` call accepts it on its options. Seated, the key only works while at least one registered option opted in; the eye and option menu then list only opted-in options (their `canInteract` is not even called for the rest), and every other option, such as ATMs and banks, stays blocked. Entering a vehicle closes an open option menu unless every option in it opted in. Default is unset (blocked); the qb-target and ox_target compatibility surfaces do not read the field.
+
 Dead, last-stand and downed players (kora_core metadata `isdead`/`inlaststand`, or the native fatal-injury flag) cannot target or run options while `Config.target.disableWhileDead` is `true` (default). The state is re-read right before an option fires, and an open eye or menu closes when the player goes down. `Config.target.allowWhileDead` is a list of option `name`s that stay usable while down (default empty); `downedPollMs` (250) sets the read interval.
 
 If the key-up event is lost (typically Alt+Tab while holding Alt), targeting or the option menu would stay on. `Config.target.recovery` (enabled by default) runs a watchdog while a session, the option menu or legacy NUI focus is active. It never runs an option when it cancels. Options:
@@ -111,9 +113,9 @@ Targets **any** entity, of any type, that has a matching bone (e.g. every vehicl
 ### `addTargetBone(entity, bone, options, defaultDistance?)`
 Sugar over `addEntity`: registers `options` on `entity`, forcing every option onto `bone` specifically.
 
-### `addBoxZone({coords, size, rotation?, options, distance?, debug?, drawSprite?})`
-### `addSphereZone({coords, radius, options, distance?, debug?, drawSprite?})`
-### `addPolyZone({points, thickness?, minZ?, maxZ?, options, distance?, debug?, drawSprite?})`
+### `addBoxZone({coords, size, rotation?, options, distance?, debug?, drawSprite?, allowInVehicle?})`
+### `addSphereZone({coords, radius, options, distance?, debug?, drawSprite?, allowInVehicle?})`
+### `addPolyZone({points, thickness?, minZ?, maxZ?, options, distance?, debug?, drawSprite?, allowInVehicle?})`
 Zone-based targets, backed by `Kora.zones.box/sphere/poly` — interact by aiming
 at a point inside the zone; standing inside it is not required. Returns the
 registration `id`.
@@ -154,6 +156,7 @@ Every `add*`/zone constructor takes an `options` array of:
     distance = 2.0,                -- optional, overrides the registration's own default
     bones = { "boot" },            -- optional, restricts this option to specific bones
     canInteract = function(entity, distance, data) return true end,  -- optional
+    allowInVehicle = true,         -- optional, keeps this option usable while seated in a vehicle (see Config.target.disableInVehicle)
     onSelect = function(entity, data) ... end,  -- required
     data = { foo = "bar" },        -- optional, passed through to canInteract/onSelect
 }
