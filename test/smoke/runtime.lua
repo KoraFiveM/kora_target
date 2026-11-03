@@ -94,6 +94,16 @@ _G.FreezeEntityPosition = function(entity, frozen) frozenEntities[entity] = froz
 local entityCoords = { x = 0, y = 0, z = 0 }
 local helpMessages, helpCleared = 0, 0
 _G.GetEntityCoords = function() return entityCoords end
+-- Ground state of the local ped; tests flip fields to simulate falling etc.
+local pedState = {}
+_G.IsPedFalling = function() return pedState.falling == true end
+_G.IsPedJumping = function() return pedState.jumping == true end
+_G.IsPedRagdoll = function() return pedState.ragdoll == true end
+_G.IsPedInParachuteFreeFall = function() return pedState.freefall == true end
+_G.IsPedClimbing = function() return pedState.climbing == true end
+_G.IsPedVaulting = function() return pedState.vaulting == true end
+_G.IsEntityInAir = function() return pedState.inAir == true end
+_G.GetPedParachuteState = function() return pedState.chute or 0 end
 _G.BeginTextCommandDisplayHelp = function() end
 _G.AddTextComponentSubstringPlayerName = function() end
 _G.EndTextCommandDisplayHelp = function() helpMessages = helpMessages + 1 end
@@ -983,6 +993,82 @@ harness.test('dead / last stand players cannot target or run options; disableWhi
     metadata.isdead = false
     harness.assertFalse(Target.isDowned(true))
     _G.exports = previousExports
+end)
+
+harness.test('the option menu never freezes an airborne ped and releases the freeze on leaving the ground', function()
+    resetMenuInput()
+    Config.target.menuMovement = 'freeze'
+    for _, state in ipairs({ 'falling', 'jumping', 'ragdoll', 'freefall', 'climbing', 'vaulting', 'inAir' }) do
+        pedState = { [state] = true }
+        runtime.selectCandidates(menuCandidates)
+        harness.assertFalse(frozenEntities[1], 'a ped that is ' .. state .. ' must not be frozen')
+        harness.assertFalse(runtime.isMenuOpen(), 'the menu must not open while ' .. state)
+        runtime.closeTargetMenu()
+    end
+    pedState = { chute = 2 }
+    harness.assertTrue(runtime.pedAirborne(), 'an open parachute counts as airborne')
+    pedState = {}
+
+    runtime.selectCandidates(menuCandidates)
+    harness.assertTrue(frozenEntities[1], 'a grounded ped is frozen in freeze mode')
+    pedState = { falling = true }
+    -- the menu loop calls closeTargetMenu when it sees the ped leave the ground
+    runtime.closeTargetMenu()
+    harness.assertFalse(frozenEntities[1], 'closing the menu restores movement')
+    pedState = {}
+    resetMenuInput()
+end)
+
+harness.test('closeWhenAirborne=false keeps the previous behaviour', function()
+    resetMenuInput()
+    Config.target.menuMovement = 'allow'
+    pedState = { falling = true }
+    Config.target.closeWhenAirborne = false
+    local opened = false
+    runtime.selectCandidates(menuCandidates)
+    harness.assertTrue(runtime.isMenuOpen(), 'with the option off the menu still opens in the air')
+    Config.target.closeWhenAirborne = true
+    pedState = {}
+    resetMenuInput()
+end)
+
+harness.test('releasing the key while airborne does not run a single option', function()
+    local ran = 0
+    local candidate = { option = { label = 'One', onSelect = function() ran = ran + 1 end }, registration = {}, anchorCoords = entityCoords }
+    pedState = { jumping = true }
+    runtime.selectCandidates({ candidate })
+    harness.assertEqual(ran, 0, 'no option may run mid-jump')
+    pedState = {}
+    runtime.selectCandidates({ candidate })
+    harness.assertEqual(ran, 1, 'the same option runs once grounded')
+end)
+
+harness.test('a single option whose target is out of range does not run', function()
+    local ran = 0
+    local candidate = { option = { label = 'One', distance = 2.0, onSelect = function() ran = ran + 1 end },
+        registration = {}, anchorCoords = { x = 2.3, y = 0, z = 0 } }
+    runtime.selectCandidates({ candidate })
+    harness.assertEqual(ran, 1, 'within distance plus rangeTolerance still runs')
+    candidate.anchorCoords = { x = 9, y = 0, z = 0 }
+    runtime.selectCandidates({ candidate })
+    harness.assertEqual(ran, 1, 'beyond distance plus rangeTolerance must not run')
+    Config.target.rangeTolerance = 0
+    candidate.anchorCoords = { x = 2.3, y = 0, z = 0 }
+    runtime.selectCandidates({ candidate })
+    harness.assertEqual(ran, 1, 'rangeTolerance = 0 is strict')
+    Config.target.rangeTolerance = 0.5
+end)
+
+harness.test('the menu range check honours rangeTolerance', function()
+    local candidate = { option = { label = 'A', distance = 2.0 }, registration = {}, anchorCoords = { x = 2.4, y = 0, z = 0 } }
+    harness.assertTrue(runtime.menuTargetInRange({ candidate }), 'inside distance + tolerance stays open')
+    candidate.anchorCoords = { x = 2.6, y = 0, z = 0 }
+    harness.assertFalse(runtime.menuTargetInRange({ candidate }), 'outside distance + tolerance closes the menu')
+end)
+
+harness.test('the shipped defaults close targeting when airborne', function()
+    harness.assertEqual(Config.target.closeWhenAirborne, true, 'closeWhenAirborne defaults to on')
+    harness.assertEqual(Config.target.rangeTolerance, 0.5, 'rangeTolerance default')
 end)
 
 harness.report('qbtarget runtime')

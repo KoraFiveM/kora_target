@@ -149,6 +149,8 @@ Config.target = {
     freezeOnMenu = false,
     lockCameraOnMenu = false,      -- also lock the gameplay camera (look controls) while the menu is open
     closeMenuOutOfRange = true,    -- close the open menu when its target moves or the player walks out of range
+    closeWhenAirborne = true,      -- cancel targeting (prompt and option menu) and never freeze the ped while it is falling, jumping, ragdolling, parachuting or climbing
+    rangeTolerance = 0.5,          -- metres added to an option's distance before the menu closes or a selected option is refused as out of range
     showCloseHint = false,         -- show the GTA help message "Press Escape to close" for a few seconds when the multiple-option menu opens; false (default) shows nothing. Escape still closes the menu and pause-menu suppression is unaffected
     suppressPauseOnClose = true,   -- Escape closes the option menu without also opening the GTA pause menu (pause controls are blocked while the menu is open and briefly after it closes). Set false to leave pause-key handling alone.
     pauseSuppressMs = 250,         -- how long (milliseconds, 0-2000) the pause controls stay blocked after the menu closes; only used when suppressPauseOnClose is true
@@ -188,6 +190,8 @@ if Kora and Kora.config and Kora.config.adopt then
     Config.target.menuMovement = Kora.config.enum(menuMovementDefault, { label = 'Movement while option menu is open', advanced = false, options = { 'freeze', 'close', 'allow' } })
     Config.target.lockCameraOnMenu = Kora.config.boolean(Config.target.lockCameraOnMenu, { label = 'Lock camera while option menu is open', advanced = false })
     Config.target.closeMenuOutOfRange = Kora.config.boolean(Config.target.closeMenuOutOfRange, { label = 'Close option menu when out of range', advanced = false })
+    Config.target.closeWhenAirborne = Kora.config.boolean(Config.target.closeWhenAirborne, { label = 'Cancel targeting when off the ground', advanced = false })
+    Config.target.rangeTolerance = Kora.config.number(Config.target.rangeTolerance, { label = 'Out-of-range tolerance (metres)', advanced = true, min = 0 })
     Config.target.showCloseHint = Kora.config.boolean(Config.target.showCloseHint, { label = 'Show option menu close hint', advanced = false })
     Config.target.suppressPauseOnClose = Kora.config.boolean(Config.target.suppressPauseOnClose, { label = 'Block pause menu when closing option menu', advanced = false })
     Config.target.pauseSuppressMs = Kora.config.integer(Config.target.pauseSuppressMs, { label = 'Pause menu block time after closing (milliseconds)', advanced = true, min = 0, max = 2000 })
@@ -237,6 +241,8 @@ if Kora and Kora.config and Kora.config.adopt then
         ['target.freezeOnMenu'] = 'Legacy: used as freeze (on) or allow (off) only when Movement while option menu is open was never set.',
         ['target.lockCameraOnMenu'] = 'Lock the gameplay camera while the multiple-option menu is open.',
         ['target.closeMenuOutOfRange'] = 'Close the multiple-option menu when its target is no longer within reach.',
+        ['target.closeWhenAirborne'] = 'Cancel the targeting prompt and the option menu when the player falls, jumps, ragdolls, parachutes or climbs, and never hold the player in place while off the ground.',
+        ['target.rangeTolerance'] = 'Extra distance allowed beyond an option\'s own range before the open menu closes or a chosen option is refused as out of range.',
         ['target.showCloseHint'] = 'Show the GTA help message explaining how to close the multiple-option menu for a few seconds when it opens. Off by default; Escape still closes the menu either way.',
         ['target.suppressPauseOnClose'] = 'Stop Escape from also opening the game pause menu when it closes the multiple-option menu. The pause keys are blocked while the menu is open and briefly after it closes.',
         ['target.pauseSuppressMs'] = 'How long the pause keys stay blocked after the multiple-option menu closes. Only used when the pause menu block is on.',

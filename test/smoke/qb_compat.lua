@@ -91,6 +91,9 @@ _G.CreatePed = function(pedType, model, x, y, z, heading, networked, missionPed)
 end
 _G.DeletePed = function(ped) deletedPeds[#deletedPeds + 1] = ped end
 _G.FreezeEntityPosition = function(ped, state) frozenPeds[ped] = state end
+_G.IsPedFalling, _G.IsPedJumping, _G.IsPedRagdoll = function() return false end, function() return false end, function() return false end
+_G.IsPedInParachuteFreeFall, _G.IsPedClimbing, _G.IsPedVaulting = function() return false end, function() return false end, function() return false end
+_G.IsEntityInAir, _G.GetPedParachuteState = function() return false end, function() return 0 end
 _G.BeginTextCommandDisplayHelp = function() end
 _G.AddTextComponentSubstringPlayerName = function() end
 _G.EndTextCommandDisplayHelp = function() end

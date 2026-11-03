@@ -50,10 +50,60 @@ end
 -- The candidate list is captured when Alt is released. It must remain valid
 -- until the compact selector is dismissed, so do not let the player walk out
 -- of a target zone and select an option from that stale snapshot.
+-- Local copies of the kora_lib cache values this file needs, kept current by
+-- onChange so no cross-resource export call runs in a loop. They fall back to
+-- natives when the cache is unavailable.
+local cachedPed, cachedInVehicle, cachedDead = nil, false, false
+if Kora.cache and Kora.cache.onChange then
+    pcall(function()
+        cachedPed, cachedInVehicle, cachedDead = Kora.cache.ped(), Kora.cache.vehicle() and true or false, Kora.cache.isDead() and true or false
+    end)
+    Kora.cache.onChange('ped', function(ped) cachedPed = ped end)
+    Kora.cache.onChange('vehicle', function(vehicle) cachedInVehicle = vehicle and true or false end)
+    Kora.cache.onChange('isDead', function(dead)
+        cachedDead = dead and true or false
+        -- A dead player must never stay held in place by the option menu.
+        if cachedDead and menuPed then
+            if not menuPedWasFrozen then FreezeEntityPosition(menuPed, false) end
+            menuPed, menuPedWasFrozen = nil, nil
+        end
+    end)
+end
+
+local function localPed()
+    if cachedPed and cachedPed ~= 0 then return cachedPed end
+    return PlayerPedId()
+end
+
+local function nativeTrue(value)
+    return value ~= nil and value ~= false and value ~= 0
+end
+
+-- True while the ped is falling, jumping, ragdolling, parachuting, climbing or
+-- vaulting, i.e. anywhere its position must stay under the game's physics.
+-- Seated in a vehicle never counts: the vehicle owns the movement there.
+local function pedAirborne(ped)
+    if cachedInVehicle then return false end
+    ped = ped or localPed()
+    if not ped or ped == 0 then return false end
+    if nativeTrue(IsPedFalling(ped)) or nativeTrue(IsPedJumping(ped)) or nativeTrue(IsPedRagdoll(ped))
+        or nativeTrue(IsPedInParachuteFreeFall(ped)) or nativeTrue(IsPedClimbing(ped))
+        or nativeTrue(IsPedVaulting(ped)) or nativeTrue(IsEntityInAir(ped)) then
+        return true
+    end
+    return (tonumber(GetPedParachuteState(ped)) or -1) > 0
+end
+
+local function closeWhenAirborne()
+    return Config.target.closeWhenAirborne ~= false
+end
+
 local function setMenuPositionFrozen(frozen)
     if frozen then
-        local ped = PlayerPedId()
+        local ped = localPed()
         if not ped or ped == 0 then return end
+        -- Never freeze a ped that is off the ground, or one that is dead.
+        if cachedDead or pedAirborne(ped) then return end
 
         menuPed = ped
         menuPedWasFrozen = IsEntityPositionFrozen(ped)
@@ -600,30 +650,43 @@ end
 -- (anchorOffset, set when the menu opens); its origin is not used, because on a
 -- long vehicle the origin is metres from the trunk or hood that was aimed at and
 -- the menu would close on its first frame.
-local function menuTargetInRange(candidates)
-    local pedCoords = GetEntityCoords(PlayerPedId())
-    for _, candidate in ipairs(candidates) do
-        local registration = candidate.registration
-        local entity = followsEntity(registration) and candidate.entity or nil
-        local entityValid = not entity or entity == 0 or DoesEntityExist(entity)
-        if entityValid then
-            local anchor = candidate.anchorCoords
-            if entity and entity ~= 0 then
-                local offset = candidate.anchorOffset
-                if offset then
-                    anchor = GetOffsetFromEntityInWorldCoords(entity, offset.x, offset.y, offset.z)
-                else
-                    anchor = GetEntityCoords(entity)
-                end
-            end
-            local maxDistance = candidate.option.distance or registration.distance or Config.target.defaultOptionDistance
-            if anchor and distanceSq(pedCoords, anchor) <= maxDistance * maxDistance then return true end
+local function rangeTolerance()
+    local tolerance = tonumber(Config.target.rangeTolerance) or 0.0
+    return tolerance > 0 and tolerance or 0.0
+end
+
+-- true / false, or nil when the candidate has nothing to measure to.
+local function candidateInRange(candidate, pedCoords)
+    local registration = candidate.registration
+    local entity = registration and followsEntity(registration) and candidate.entity or nil
+    if entity and entity ~= 0 and not DoesEntityExist(entity) then return false end
+    local anchor = candidate.anchorCoords
+    if entity and entity ~= 0 then
+        local offset = candidate.anchorOffset
+        if offset then
+            anchor = GetOffsetFromEntityInWorldCoords(entity, offset.x, offset.y, offset.z)
+        else
+            anchor = GetEntityCoords(entity)
         end
+    end
+    if not anchor then return nil end
+    local maxDistance = (candidate.option.distance or (registration and registration.distance)
+        or Config.target.defaultOptionDistance) + rangeTolerance()
+    return distanceSq(pedCoords, anchor) <= maxDistance * maxDistance
+end
+
+local function menuTargetInRange(candidates)
+    local pedCoords = GetEntityCoords(localPed())
+    for _, candidate in ipairs(candidates) do
+        if candidateInRange(candidate, pedCoords) then return true end
     end
     return false
 end
 
 local function runOption(candidate)
+    -- The snapshot may be older than the click: an option whose target has since
+    -- gone out of reach (or vanished) must not run.
+    if candidateInRange(candidate, GetEntityCoords(localPed())) == false then return end
     if Target.isDowned(true) and not optionAllowedWhileDown(candidate.option) then
         Target._cancelCurrentTargeting()
         return
@@ -642,12 +705,17 @@ end
 ---player can keep camera control and choose with scroll/arrows plus E.
 local function selectCandidates(candidates)
     if #candidates == 0 then return end
+    -- Releasing the key mid-fall or mid-jump neither opens the menu nor runs an option.
+    if closeWhenAirborne() and pedAirborne() then return end
+
+    for _, candidate in ipairs(candidates) do
+        local entity = candidate.registration and followsEntity(candidate.registration) and candidate.entity or nil
+        candidate.anchorOffset = entity and entity ~= 0 and entityAnchorOffset(entity, candidate.anchorCoords) or nil
+    end
     if #candidates == 1 then return runOption(candidates[1]) end
 
     local items = {}
     for index, candidate in ipairs(candidates) do
-        local entity = candidate.registration and followsEntity(candidate.registration) and candidate.entity or nil
-        candidate.anchorOffset = entity and entity ~= 0 and entityAnchorOffset(entity, candidate.anchorCoords) or nil
         items[index] = {
             label = candidate.option.label,
             icon = candidate.option.icon,
@@ -676,10 +744,12 @@ local function selectCandidates(candidates)
         while Kora.interact.isActive() do
             if menuInputFrame(movementMode, inputState) then break end
             if Target.isDowned() and #allowedWhileDown() == 0 then break end
-            if Config.target.closeMenuOutOfRange then
-                local now = GetGameTimer()
-                if now >= nextRangeCheck then
-                    nextRangeCheck = now + Config.target.tickActive
+            local now = GetGameTimer()
+            if now >= nextRangeCheck then
+                nextRangeCheck = now + Config.target.tickActive
+                -- Leaving the ground closes the menu, which also lifts any freeze.
+                if closeWhenAirborne() and pedAirborne() then break end
+                if Config.target.closeMenuOutOfRange then
                     if not menuTargetInRange(candidates) then break end
                 end
             end
@@ -879,6 +949,8 @@ local function startTargeting()
                 holding = false
                 closeTargetMenu()
             end
+            -- Falling, jumping or climbing cancels targeting (hover prompt included).
+            if holding and closeWhenAirborne() and pedAirborne() then forceRelease() end
             if not holding then
                 Target.active = false
                 resetRuntimeState()
@@ -1032,6 +1104,8 @@ if Config.target.testMode then
         resetRuntimeState = resetRuntimeState,
         selectCandidates = selectCandidates,
         menuTargetInRange = menuTargetInRange,
+        pedAirborne = pedAirborne,
+        isMenuOpen = function() return menuOpen end,
         closeTargetMenu = closeTargetMenu,
         forceRelease = forceRelease,
         isHolding = function() return holding end,

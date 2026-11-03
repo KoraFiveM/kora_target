@@ -52,6 +52,10 @@ Kora.interact = {
 _G.PlayerPedId = function() return 1 end
 _G.IsEntityPositionFrozen = function() return false end
 _G.FreezeEntityPosition = function() end
+_G.IsPedFalling, _G.IsPedJumping, _G.IsPedRagdoll = function() return false end, function() return false end, function() return false end
+_G.IsPedInParachuteFreeFall, _G.IsPedClimbing, _G.IsPedVaulting = function() return false end, function() return false end, function() return false end
+_G.IsEntityInAir, _G.GetPedParachuteState = function() return false end, function() return 0 end
+_G.GetEntityCoords = _G.GetEntityCoords or function() return { x = 0, y = 0, z = 0 } end
 _G.BeginTextCommandDisplayHelp = function() end
 _G.AddTextComponentSubstringPlayerName = function() end
 _G.EndTextCommandDisplayHelp = function() end
