@@ -6,6 +6,9 @@ Config = {}
 local configNumber = Kora and Kora.config and Kora.config.number
 
 Config.target = {
+    -- addEntity warns and skips (instead of raising a script error) when given a non-number handle, e.g. a failed entity spawn.
+    skipInvalidEntities = true,
+
     -- Hold this key to enter targeting mode (raycasting + drawing a prompt
     -- every tick). Uses FiveM's +/- command-pair convention, not a plain
     -- RegisterCommand, specifically so press vs release can be told apart.

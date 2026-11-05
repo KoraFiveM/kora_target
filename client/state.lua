@@ -540,6 +540,10 @@ function Target.addEntity(entity, options, defaultDistance)
     local entities = toArray(entity)
     assert(#entities > 0, "addEntity requires at least one entity handle.")
     for _, e in ipairs(entities) do
+        if type(e) ~= "number" and Config.target.skipInvalidEntities then
+            print(("[kora_target] addEntity skipped: invalid entity handle (%s) from %s"):format(tostring(e), GetInvokingResource() or "unknown"))
+            return nil
+        end
         assert(type(e) == "number", "Entity handles must be numbers.")
     end
 
