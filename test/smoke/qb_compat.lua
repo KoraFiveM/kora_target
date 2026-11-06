@@ -1,6 +1,17 @@
 local scriptDir = debug.getinfo(1, 'S').source:match('@?(.*/)') or './'
 local resourceRoot = scriptDir .. '../../'
-local koraLibTestRoot = resourceRoot .. '../kora_lib/test/'
+-- kora_lib is a sibling in the flat GitHub layout and lives in [pre]/ on the
+-- server tree ([kora]/kora_target); KORA_LIB_DIR overrides both.
+local function findKoraLib()
+    local candidates = { os.getenv('KORA_LIB_DIR'), resourceRoot .. '../kora_lib', resourceRoot .. '../../[pre]/kora_lib' }
+    for _, dir in pairs(candidates) do
+        local file = dir and io.open(dir .. '/test/harness.lua', 'r')
+        if file then file:close(); return dir .. '/' end
+    end
+    return resourceRoot .. '../kora_lib/'
+end
+local koraLibRoot = findKoraLib()
+local koraLibTestRoot = koraLibRoot .. 'test/'
 package.path = koraLibTestRoot .. '?.lua;' .. package.path
 
 local harness = require('harness')
@@ -159,7 +170,7 @@ _G.exports = {
 -- call needs a plain-table stand-in.
 _G.vector3 = function(x, y, z) return { x = x, y = y, z = z } end
 
-dofile(resourceRoot .. '../kora_lib/local/resources/client.lua')
+dofile(koraLibRoot .. 'local/resources/client.lua')
 dofile(resourceRoot .. 'client/state.lua')
 dofile(resourceRoot .. 'client/compat/qb-target.lua')
 
@@ -592,6 +603,21 @@ harness.test('pending SpawnPed configs spawn on OnPlayerLoaded and respawn after
     netHandlers['QBCore:Client:OnPlayerLoaded']()
     harness.assertTrue(pedConfig.currentpednumber ~= 0, 'reload must respawn the configured ped')
     removeSpawnedPed(pedConfig.currentpednumber)
+end)
+
+harness.test('a canInteract that returns nothing hides the option, as upstream qb-target does', function()
+    harness.assertFalse(addOptionAndCheck({ label = 'Bare return', canInteract = function() end }),
+        'a nil canInteract result must hide the option')
+    harness.assertTrue(addOptionAndCheck({ label = 'Truthy', canInteract = function() return 1 end }),
+        'a truthy canInteract result must show the option')
+end)
+
+harness.test('job and gang filters tolerate an empty PlayerData between characters', function()
+    local job, gang = qbCorePlayerData.job, qbCorePlayerData.gang
+    qbCorePlayerData.job, qbCorePlayerData.gang = nil, { name = 'ballas' }
+    harness.assertFalse(addOptionAndCheck({ label = 'No job yet', job = 'police' }), 'missing job denies without erroring')
+    harness.assertFalse(addOptionAndCheck({ label = 'Gang grade', gang = { ballas = 1 } }), 'missing gang grade counts as 0')
+    qbCorePlayerData.job, qbCorePlayerData.gang = job, gang
 end)
 
 harness.report('qbtarget qb-target compatibility')

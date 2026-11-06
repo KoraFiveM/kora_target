@@ -1,6 +1,17 @@
 local scriptDir = debug.getinfo(1, 'S').source:match('@?(.*/)') or './'
 local resourceRoot = scriptDir .. '../../'
-local koraLibTestRoot = resourceRoot .. '../kora_lib/test/'
+-- kora_lib is a sibling in the flat GitHub layout and lives in [pre]/ on the
+-- server tree ([kora]/kora_target); KORA_LIB_DIR overrides both.
+local function findKoraLib()
+    local candidates = { os.getenv('KORA_LIB_DIR'), resourceRoot .. '../kora_lib', resourceRoot .. '../../[pre]/kora_lib' }
+    for _, dir in pairs(candidates) do
+        local file = dir and io.open(dir .. '/test/harness.lua', 'r')
+        if file then file:close(); return dir .. '/' end
+    end
+    return resourceRoot .. '../kora_lib/'
+end
+local koraLibRoot = findKoraLib()
+local koraLibTestRoot = koraLibRoot .. 'test/'
 package.path = koraLibTestRoot .. '?.lua;' .. package.path
 
 local harness = require('harness')
@@ -78,7 +89,7 @@ _G.NetworkGetNetworkIdFromEntity = function(entity) return assert(networkIds[ent
 local networkEntities = {}
 _G.NetworkGetEntityFromNetworkId = function(netId) return networkEntities[netId] end
 
-dofile(resourceRoot .. '../kora_lib/local/resources/client.lua')
+dofile(koraLibRoot .. 'local/resources/client.lua')
 dofile(resourceRoot .. 'config.lua')
 Config.target.testMode = true
 dofile(resourceRoot .. 'client/state.lua')
@@ -840,6 +851,24 @@ harness.test('manifest does not claim the ox_target name', function()
     harness.assertTrue(not manifest:find("^%s*provide%s+['\"]ox_target['\"]") and not manifest:find("\n%s*provide%s+['\"]ox_target['\"]"), "kora_target must not provide 'ox_target'")
     harness.assertTrue(manifest:find("provide 'qb-target'", 1, true) ~= nil, "still provides 'qb-target'")
     harness.assertTrue(manifest:find("provide 'qbtarget'", 1, true) ~= nil, "still provides 'qbtarget'")
+end)
+
+harness.test('a canInteract that returns nothing hides the option, as upstream ox_target does', function()
+    clearRegistrations()
+    local id = addGlobalVehicle({ { name = 'bare', label = 'Bare', canInteract = function() end, onSelect = function() end } })
+    harness.assertFalse(Target.registrations[id].options[1].canInteract(12, 1.0), 'nil must hide the option')
+    clearRegistrations()
+end)
+
+harness.test('addEntity keeps network-id targets for entities that are not streamed in yet', function()
+    clearRegistrations()
+    local id = addEntity(888, { { label = 'Later', onSelect = function() end } })
+    harness.assertTrue(Target.registrations[id] ~= nil, 'an unresolved network id still registers')
+    harness.assertTrue(Target.byNetId[888] ~= nil, 'indexed by network id')
+    harness.assertTrue(Target.byEntity[0] == nil, 'never indexed under handle 0')
+    harness.assertTrue(removeEntity(888), 'removeEntity finds it by network id')
+    harness.assertTrue(Target.byNetId[888] == nil)
+    clearRegistrations()
 end)
 
 harness.report('qbtarget ox_target compatibility')

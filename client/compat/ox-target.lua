@@ -31,7 +31,7 @@ local function responseFor(entity, context, server, option)
     response.distance = context and context.distance or nil
     response.zone = context and context.registration.kind == 'zone' and context.registration.id or nil
     if server then
-        response.entity = entity and entity ~= 0 and NetworkGetEntityIsNetworked(entity)
+        response.entity = entity and entity ~= 0 and DoesEntityExist(entity) and NetworkGetEntityIsNetworked(entity)
             and NetworkGetNetworkIdFromEntity(entity) or 0
     end
     return response
@@ -55,7 +55,7 @@ end
 
 local function removeGoback()
     if not gobackIds then return end
-    for entityType, id in pairs(gobackIds) do Target.removeGlobalType(entityType, id) end
+    for _, id in pairs(gobackIds) do Target.destroyRegistration(id) end
     gobackIds = nil
 end
 
@@ -72,7 +72,7 @@ end
 local function gobackOption()
     return {
         name = GOBACK_NAME,
-        label = 'Go back',
+        label = Target.text and Target.text('goBack', 'Go back') or 'Go back',
         icon = 'fa-solid fa-circle-chevron-left',
         canInteract = function() return currentMenu ~= nil end,
         onSelect = function() goBack() end,
@@ -128,7 +128,7 @@ local function dispatchLegacy(option, entity, context, invoker)
             exports[resource][option.export](nil, responseFor(entity, context, false, option))
         end)
         if not ok then
-            print(('[ox_target-bridge] export %s.%s for option %q failed: %s')
+            print(('[kora_target:ox_target] export %s.%s for option %q failed: %s')
                 :format(tostring(resource), tostring(option.export), tostring(option.label), tostring(err)))
         end
     elseif option.event then
@@ -219,7 +219,7 @@ local function hasItems(filter, hasAny)
         local result = playerHas(name, amount)
         if result == nil and not inventoryWarned then
             inventoryWarned = true
-            print('[ox_target-bridge] WARNING: option sets items but kora_inventory is unavailable '
+            print('[kora_target:ox_target] WARNING: option sets items but kora_inventory is unavailable '
                 .. '-- item requirements cannot be checked and will not deny.')
         end
         return result
@@ -259,6 +259,7 @@ end
 local function offsetAllows(option, entity, coords)
     local offset = option.offset
     if not offset or not coords or not entity or entity == 0 then return true end
+    if not DoesEntityExist(entity) then return false end
     if not option.absoluteOffset and not option.offsetAbsolute then
         local min, max = GetModelDimensions(GetEntityModel(entity))
         offset = vector3(
@@ -286,7 +287,7 @@ local function makeCanInteract(option, isZone)
     if enforce then
         local available = Target._playerData and (Target._playerData())
         if not available then
-            print(('[ox_target-bridge] WARNING: option %q sets groups but no kora_core identity is running '
+            print(('[kora_target:ox_target] WARNING: option %q sets groups but no kora_core identity is running '
                 .. '-- groups cannot be checked and the option will be shown to everyone.')
                 :format(tostring(option.label)))
         end
@@ -304,7 +305,8 @@ local function makeCanInteract(option, isZone)
         if not isZone and option.offset and not offsetAllows(option, entity, anchorCoords) then return false end
         if userCheck then
             local coords = anchorCoords and vector3(anchorCoords.x, anchorCoords.y, anchorCoords.z) or nil
-            return userCheck(entity or 0, distance, coords, option.name, nil)
+            -- Upstream hides the option on any falsy result, including a bare `return`.
+            return userCheck(entity or 0, distance, coords, option.name, nil) and true or false
         end
         return true
     end
@@ -584,20 +586,16 @@ local function toArray(value)
 end
 
 -- addEntity/removeEntity take NETWORK ids (unlike addLocalEntity), bridged to the local-handle Target.* via NetworkGetEntityFromNetworkId.
+-- Indexed by network id (as upstream), so an entity that is not streamed in yet,
+-- or streams out and back in under a new handle, keeps its options.
 local function addEntity(netIds, options)
-    local entities = {}
-    for i, netId in ipairs(toArray(netIds)) do
-        entities[i] = NetworkGetEntityFromNetworkId(netId)
-    end
-
-    return Target.addEntity(entities, translateOxOptions(options))
+    return Target._addNetworkEntity(netIds, translateOxOptions(options))
 end
 
 local function removeEntity(netIds)
     local removedAny = false
     for _, netId in ipairs(toArray(netIds)) do
-        local entity = NetworkGetEntityFromNetworkId(netId)
-        if Target.removeEntity(entity) then removedAny = true end
+        if Target._removeNetworkEntity(netId) then removedAny = true end
     end
 
     return removedAny

@@ -1,6 +1,17 @@
 local scriptDir = debug.getinfo(1, 'S').source:match('@?(.*/)') or './'
 local resourceRoot = scriptDir .. '../../'
-local koraLibTestRoot = resourceRoot .. '../kora_lib/test/'
+-- kora_lib is a sibling in the flat GitHub layout and lives in [pre]/ on the
+-- server tree ([kora]/kora_target); KORA_LIB_DIR overrides both.
+local function findKoraLib()
+    local candidates = { os.getenv('KORA_LIB_DIR'), resourceRoot .. '../kora_lib', resourceRoot .. '../../[pre]/kora_lib' }
+    for _, dir in pairs(candidates) do
+        local file = dir and io.open(dir .. '/test/harness.lua', 'r')
+        if file then file:close(); return dir .. '/' end
+    end
+    return resourceRoot .. '../kora_lib/'
+end
+local koraLibRoot = findKoraLib()
+local koraLibTestRoot = koraLibRoot .. 'test/'
 package.path = koraLibTestRoot .. '?.lua;' .. package.path
 
 local harness = require('harness')
@@ -132,11 +143,12 @@ _G.GetEntityBoneIndexByName = function() boneReads = boneReads + 1; return 0 end
 _G.GetWorldPositionOfEntityBone = function() return { x = 0, y = 0, z = 0 } end
 _G.joaat = function(value) return value end
 _G.NetworkGetEntityIsNetworked = function() return true end
-_G.NetworkGetNetworkIdFromEntity = function() return 1 end
+-- One network id per handle (the old constant 1 made every entity share a network id).
+_G.NetworkGetNetworkIdFromEntity = function(entity) return entity end
 
 dofile(resourceRoot .. 'config.lua')
 Config.target.testMode = true
-dofile(resourceRoot .. '../kora_lib/local/resources/client.lua')
+dofile(koraLibRoot .. 'local/resources/client.lua')
 dofile(resourceRoot .. 'client/state.lua')
 dofile(resourceRoot .. 'client/sprites.lua')
 dofile(resourceRoot .. 'client/loop.lua')
@@ -1263,6 +1275,88 @@ harness.test('allowInVehicle must be a boolean on options and zones', function()
     })
     harness.assertFalse(ok, 'a non-boolean zone allowInVehicle is rejected')
     harness.assertEqual(#zoneCalls, before, 'a rejected zone never creates a kora_lib zone')
+end)
+
+harness.test('cuffed, UI-blocked or progress-bar players cannot target or run options; blockWhileBusy opts out', function()
+    local state = {}
+    local previousLocal, previousBar = _G.LocalPlayer, Kora.progressbar
+    _G.LocalPlayer = { state = state }
+    local barActive = false
+    Kora.progressbar = { isActive = function() return barActive end }
+    local ran = 0
+    local candidate = { entity = 1, option = { label = 'Use', onSelect = function() ran = ran + 1 end } }
+
+    for _, case in ipairs({
+        { function() state.koraCuffed = true end, function() state.koraCuffed = nil end, 'cuffed' },
+        { function() state.koraUiBlocked = true end, function() state.koraUiBlocked = nil end, 'UI-blocked' },
+        { function() barActive = true end, function() barActive = false end, 'progress bar' },
+    }) do
+        case[1]()
+        runtime.selectCandidates({ candidate })
+        harness.assertEqual(ran, 0, case[3] .. ' blocks the option')
+        commands['+playerTarget']()
+        harness.assertFalse(Target.active, case[3] .. ' blocks opening the eye')
+        commands['-playerTarget']()
+        case[2]()
+    end
+
+    Target.isBusy(true)
+    runtime.selectCandidates({ candidate })
+    harness.assertEqual(ran, 1, 'a free player runs the option')
+
+    Config.target.blockWhileBusy = false
+    barActive = true
+    runtime.selectCandidates({ candidate })
+    harness.assertEqual(ran, 2, 'blockWhileBusy = false ignores the progress bar')
+    Config.target.blockWhileBusy, barActive = true, false
+    Target.isBusy(true)
+    _G.LocalPlayer, Kora.progressbar = previousLocal, previousBar
+end)
+
+harness.test('a quick release and press while the previous session thread is parked still opens the eye', function()
+    commands['+playerTarget']()
+    commands['-playerTarget']()
+    -- CreateThread is a no-op here, so the first session's thread never clears holdingThread:
+    -- exactly the window a real quick re-press lands in.
+    commands['+playerTarget']()
+    harness.assertTrue(Target.active, 'the second press must start targeting')
+    harness.assertTrue(runtime.isHolding(), 'and keep the session holding')
+    commands['-playerTarget']()
+    harness.assertFalse(Target.active)
+end)
+
+harness.test('a networked entity keeps its options after it re-streams under a new handle', function()
+    local savedNet, savedId = _G.NetworkGetEntityIsNetworked, _G.NetworkGetNetworkIdFromEntity
+    local netIdOf = { [501] = 9001, [502] = 9001 }
+    _G.NetworkGetEntityIsNetworked = function(entity) return netIdOf[entity] ~= nil end
+    _G.NetworkGetNetworkIdFromEntity = function(entity) return netIdOf[entity] end
+    local id = Target.addEntity(501, {{ label = 'Truck', onSelect = function() end }})
+    local found = false
+    for _, registration in ipairs(runtime.entityRegistrations(502)) do
+        if registration.id == id then found = true end
+    end
+    harness.assertTrue(found, 'the new handle resolves through the network id')
+    harness.assertTrue(Target.removeEntity(502), 'removeEntity by the new handle removes it')
+    harness.assertTrue(Target.registrations[id] == nil and Target.byNetId[9001] == nil, 'both indexes cleared')
+    _G.NetworkGetEntityIsNetworked, _G.NetworkGetNetworkIdFromEntity = savedNet, savedId
+end)
+
+harness.test('removal by id refuses another resource\'s registration and the wrong kind', function()
+    local savedInvoker = _G.GetInvokingResource
+    local invoker = 'kora_banking'
+    _G.GetInvokingResource = function() return invoker end
+    local zone = Target.addSphereZone({ coords = { x = 0, y = 0, z = 0 }, radius = 1.0,
+        options = {{ label = 'Open bank', onSelect = function() end }} })
+    invoker = 'kora_robberies'
+    harness.assertFalse(Target.removeZone(zone), 'a stale id from another resource must not remove the zone')
+    harness.assertFalse(Target.removeEntity(5, zone), 'removeEntity must not remove a zone')
+    harness.assertTrue(Target.registrations[zone] ~= nil)
+    Config.target.ownerScopedRemoval = false
+    harness.assertFalse(Target.removeEntity(5, zone), 'the kind check stays on')
+    Config.target.ownerScopedRemoval = true
+    invoker = 'kora_banking'
+    harness.assertTrue(Target.removeZone(zone), 'the owner can remove it')
+    _G.GetInvokingResource = savedInvoker
 end)
 
 harness.report('qbtarget runtime')

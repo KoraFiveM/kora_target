@@ -253,9 +253,11 @@ local function closeTargetMenu()
     menuHintShown = false
 end
 
--- Close an open menu if this resource stops.
+-- Close an open menu (and any legacy qb-target cursor focus) if this resource stops.
 AddEventHandler('onResourceStop', function(resource)
-    if resource == GetCurrentResourceName() then closeTargetMenu() end
+    if resource ~= GetCurrentResourceName() then return end
+    closeTargetMenu()
+    if Target._releaseLegacyFocus then pcall(Target._releaseLegacyFocus) end
 end)
 
 -- Internal compatibility hook for qb-target's DisableTarget(true). That
@@ -297,6 +299,38 @@ function Target.isDowned(fresh)
         downedCache = readDowned()
     end
     return downedCache
+end
+
+-- Busy gate (Config.target.blockWhileBusy / uiBlockBag): cuffed (kora_police's
+-- replicated koraCuffed bag), another resource holding the shared UI-block bag
+-- (kora_emotemenu's freecam, ...), or a kora_lib progress bar running. Polled
+-- on the same cadence as the downed check; `fresh` bypasses the cache.
+local busyCache, busyCheckedAt = false, -math.huge
+
+local function readBusy()
+    local state = LocalPlayer and LocalPlayer.state
+    local bag = Config.target.uiBlockBag
+    if bag == nil then bag = 'koraUiBlocked' end
+    if state and type(bag) == 'string' and bag ~= '' and state[bag] == true then return true end
+    if Config.target.blockWhileBusy == false then return false end
+    if state and state.koraCuffed == true then return true end
+    if Kora.progressbar and Kora.progressbar.isActive then
+        local ok, active = pcall(Kora.progressbar.isActive)
+        if ok and active == true then return true end
+    end
+    return false
+end
+
+---True while the player is cuffed, UI-blocked or in a progress bar (see Config.target.blockWhileBusy).
+---@param fresh boolean|nil skip the poll cache (used right before an action fires)
+---@return boolean
+function Target.isBusy(fresh)
+    local now = GetGameTimer()
+    if fresh or now - busyCheckedAt >= (tonumber(Config.target.downedPollMs) or 250) then
+        busyCheckedAt = now
+        busyCache = readBusy()
+    end
+    return busyCache
 end
 
 local function allowedWhileDown()
@@ -402,6 +436,9 @@ local function entityRegistrations(entity)
 
     local registrations, seen = {}, {}
     addRegistrations(registrations, seen, Target.byEntity[entity])
+    -- Networked entities keep their registrations across a re-stream (new handle, same network id).
+    local netId = next(Target.byNetId) and Target._networkIdOf(entity)
+    if netId then addRegistrations(registrations, seen, Target.byNetId[netId]) end
     addRegistrations(registrations, seen, Target.byModel[model])
     addRegistrations(registrations, seen, Target.byGlobalType[entityType])
     if next(Target.byGlobalBone) then addRegistrations(registrations, seen, Target.byGlobalBone) end
@@ -466,7 +503,7 @@ local function optionAllowed(registration, optionIndex, option, entity, distance
     if Config.target.diagnostics then diagnostics.canInteract = diagnostics.canInteract + 1 end
     local ok, result = pcall(option.canInteract, entity, distance, option.data, anchorCoords)
     local allowed = ok and result ~= false
-    if not ok then print(("[qbtarget] canInteract for option '%s' errored: %s"):format(option.label, tostring(result))) end
+    if not ok then print(("[kora_target] canInteract for option '%s' errored: %s"):format(option.label, tostring(result))) end
 
     local cacheMs = allowed and successCacheMs or failureCacheMs
     if cacheMs > 0 then
@@ -628,7 +665,7 @@ syncTargetHud = function(active, candidates)
 
     Kora.nui.send('qbtarget:target', {
         active = true,
-        label = top and (optionCount == 1 and option.label or ('%d options'):format(optionCount)) or nil,
+        label = top and (optionCount == 1 and option.label or (Target.text('optionCount', '%d options')):format(optionCount)) or nil,
         optionCount = optionCount,
     })
 end
@@ -662,7 +699,7 @@ end
 local function reportDiagnostics(now)
     if not Config.target.diagnostics or now - diagnostics.lastReport < Config.target.diagnosticsInterval then return end
     local scans = math.max(diagnostics.scans, 1)
-    print(('[qbtarget] %d scans (%d ticks skipped as static), %d raycasts, %d options, %d canInteract calls, %.2fms average resolve')
+    print(('[kora_target] %d scans (%d ticks skipped as static), %d raycasts, %d options, %d canInteract calls, %.2fms average resolve')
         :format(diagnostics.scans, diagnostics.skipped, diagnostics.raycasts, diagnostics.options, diagnostics.canInteract, diagnostics.elapsed / scans))
     diagnostics = { scans = 0, skipped = 0, raycasts = 0, options = 0, canInteract = 0, elapsed = 0, lastReport = now }
 end
@@ -737,13 +774,17 @@ local function runOption(candidate)
         Target._cancelCurrentTargeting()
         return
     end
+    if Target.isBusy(true) then
+        Target._cancelCurrentTargeting()
+        return
+    end
     local ok, err
     if candidate.option._onSelectContext then
         ok, err = pcall(candidate.option._onSelectContext, candidate)
     else
         ok, err = pcall(candidate.option.onSelect, candidate.entity, candidate.option.data)
     end
-    if not ok then print(("[qbtarget] onSelect for option '%s' errored: %s"):format(candidate.option.label, tostring(err))) end
+    if not ok then print(("[kora_target] onSelect for option '%s' errored: %s"):format(candidate.option.label, tostring(err))) end
 end
 
 ---Resolves the candidates captured at Alt release. One option is immediate;
@@ -786,7 +827,7 @@ local function selectCandidates(candidates)
     -- kora_lib's selector has no footer, so use a one-off native help message.
     if Config.target.showCloseHint then
         BeginTextCommandDisplayHelp('STRING')
-        AddTextComponentSubstringPlayerName('Press ~INPUT_FRONTEND_PAUSE_ALTERNATE~ to close')
+        AddTextComponentSubstringPlayerName(Target.text('closeHint', 'Press ~INPUT_FRONTEND_PAUSE_ALTERNATE~ to close'))
         EndTextCommandDisplayHelp(0, false, false, 5000)
         menuHintShown = true
     end
@@ -798,6 +839,8 @@ local function selectCandidates(candidates)
         while Kora.interact.isActive() do
             if menuInputFrame(movementMode, inputState) then break end
             if Target.isDowned() and #allowedWhileDown() == 0 then break end
+            -- Logout / character select / a disabled eye never leave the option menu open.
+            if not Target.enabled or Target.interactionsLocked() or Target.isBusy() then break end
             local now = GetGameTimer()
             if now >= nextRangeCheck then
                 nextRangeCheck = now + Config.target.tickActive
@@ -983,10 +1026,21 @@ if RegisterNUICallback then
 end
 
 local function startTargeting()
-    if holdingThread or targetingBlocked() or Target.interactionsLocked() or (Target.isDowned(true) and #allowedWhileDown() == 0) then
+    if targetingBlocked() or Target.interactionsLocked() or (Target.isDowned(true) and #allowedWhileDown() == 0)
+        or Target.isBusy(true) then
         holding = false
         Target.active = false
         resetRuntimeState()
+        return
+    end
+    if holdingThread then
+        -- A quick release + press lands while the previous session's thread is
+        -- still parked in its Wait; it re-reads `holding` and keeps resolving.
+        -- Refusing here used to swallow the press, so the eye did not open.
+        Target.active = Target.enabled
+        resetRuntimeState()
+        syncTargetHud(true, currentCandidates)
+        startWatchdog()
         return
     end
     holdingThread = true
@@ -999,7 +1053,7 @@ local function startTargeting()
     CreateThread(function()
         while holding do
             local now = GetGameTimer()
-            if Target.isDowned() and #allowedWhileDown() == 0 then
+            if (Target.isDowned() and #allowedWhileDown() == 0) or Target.isBusy() then
                 holding = false
                 closeTargetMenu()
             end
@@ -1053,7 +1107,8 @@ local targetKeybind = {
     defaultMapper = 'keyboard',
     defaultKey = Config.target.keybind.defaultKey,
     onPressed = function()
-        if targetingBlocked() or Target.interactionsLocked() or (Target.isDowned(true) and #allowedWhileDown() == 0) then
+        if targetingBlocked() or Target.interactionsLocked() or (Target.isDowned(true) and #allowedWhileDown() == 0)
+            or Target.isBusy(true) then
             holding = false
             Target.active = false
             resetRuntimeState()
@@ -1128,13 +1183,13 @@ RegisterCommand('qbtarget_debug', function(_, args)
     elseif arg == nil then
         enabled = not Target.debugEnabled
     else
-        print(("[qbtarget] qbtarget_debug: unrecognised argument '%s' -- use 'on', 'off', or no argument to toggle."):format(arg))
+        print(("[kora_target] qbtarget_debug: unrecognised argument '%s' -- use 'on', 'off', or no argument to toggle."):format(arg))
         return
     end
 
     Target.debugEnabled = enabled
     Kora.zones.setDebug(nil, enabled)
-    print(("[qbtarget] target zone debug drawing %s."):format(enabled and 'enabled' or 'disabled'))
+    print(("[kora_target] target zone debug drawing %s."):format(enabled and 'enabled' or 'disabled'))
 end, false)
 
 AddEventHandler('onClientResourceStop', function(resource)
@@ -1142,6 +1197,7 @@ AddEventHandler('onClientResourceStop', function(resource)
         holding = false
         closeTargetMenu()
         resetRuntimeState()
+        if Target._releaseLegacyFocus then pcall(Target._releaseLegacyFocus) end
     end
 end)
 
@@ -1182,9 +1238,9 @@ end
 
 if Config.target.demo then
     Target.addGlobalType('ped', {{ label = 'Inspect ped (demo)', icon = 'eye', onSelect = function(entity)
-        print(('[qbtarget] demo: inspected ped %s (model %s)'):format(tostring(entity), tostring(GetEntityModel(entity))))
+        print(('[kora_target] demo: inspected ped %s (model %s)'):format(tostring(entity), tostring(GetEntityModel(entity))))
     end }}, 3.0)
     Target.addGlobalType('vehicle', {{ label = 'Inspect vehicle (demo)', icon = 'car', onSelect = function(entity)
-        print(('[qbtarget] demo: inspected vehicle %s'):format(tostring(entity)))
+        print(('[kora_target] demo: inspected vehicle %s'):format(tostring(entity)))
     end }}, 3.0)
 end

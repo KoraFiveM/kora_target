@@ -20,7 +20,8 @@ local function dispatchLegacy(option, entity)
     local data = {}
     for k, v in pairs(option) do data[k] = v end
     data.entity = entity
-    if entity and entity ~= 0 then data.coords = GetEntityCoords(entity) end
+    -- The aimed entity may have despawned between the hover and the click.
+    if entity and entity ~= 0 and DoesEntityExist(entity) then data.coords = GetEntityCoords(entity) end
 
     if isCallable(option.action) then
         option.action(entity)
@@ -79,32 +80,43 @@ RegisterNetEvent('QBCore:Client:OnPlayerUpdated', function(key, val)
     elseif key == 'all' then PlayerData = val end
 end)
 
+-- PlayerData can be an empty table between characters (kora_core clears it on
+-- unload) or carry a job/gang without a grade; never index through nil there.
+local function gradeLevel(entry)
+    local grade = type(entry) == 'table' and entry.grade or nil
+    if type(grade) == 'table' then grade = grade.level end
+    return tonumber(grade or 0) or 0
+end
+
 local function jobCheck(job)
-    if not PlayerData then return false end
+    local current = type(PlayerData) == 'table' and PlayerData.job
+    if type(current) ~= 'table' then return false end
     if type(job) == 'table' then
-        local required = job[PlayerData.job.name]
-        return required ~= nil and PlayerData.job.grade.level >= required
+        local required = job[current.name]
+        return required ~= nil and gradeLevel(current) >= required
     end
-    return job == 'all' or job == PlayerData.job.name
+    return job == 'all' or job == current.name
 end
 
 local function jobTypeCheck(jobType)
-    if not PlayerData then return false end
-    if type(jobType) == 'table' then return jobType[PlayerData.job.type] ~= nil end
-    return jobType == 'all' or jobType == PlayerData.job.type
+    local current = type(PlayerData) == 'table' and PlayerData.job
+    if type(current) ~= 'table' then return false end
+    if type(jobType) == 'table' then return jobType[current.type] ~= nil end
+    return jobType == 'all' or jobType == current.type
 end
 
 local function gangCheck(gang)
-    if not PlayerData then return false end
+    local current = type(PlayerData) == 'table' and PlayerData.gang
+    if type(current) ~= 'table' then return false end
     if type(gang) == 'table' then
-        local required = gang[PlayerData.gang.name]
-        return required ~= nil and PlayerData.gang.grade.level >= required
+        local required = gang[current.name]
+        return required ~= nil and gradeLevel(current) >= required
     end
-    return gang == 'all' or gang == PlayerData.gang.name
+    return gang == 'all' or gang == current.name
 end
 
 local function citizenCheck(citizenid)
-    if not PlayerData then return false end
+    if type(PlayerData) ~= 'table' then return false end
     if type(citizenid) == 'table' then return citizenid[PlayerData.citizenid] end
     return citizenid == PlayerData.citizenid
 end
@@ -116,8 +128,8 @@ local function makeCanInteract(option)
         or option.gang or option.excludegang or option.item or option.citizenid
 
     if hasFilter and not coreAvailable then
-        print(('[qb-target-bridge] WARNING: option %q sets a job/gang/item/jobType filter but no qbcore '
-            .. 'identity resource is running -- the option will be shown to EVERYONE unless it supplies its '
+        print(('[kora_target:qb-target] WARNING: option %q sets a job/gang/item/jobType filter but kora_core '
+            .. 'is not running -- the option will be shown to EVERYONE unless it supplies its '
             .. 'own canInteract.'):format(tostring(option.label)))
     end
 
@@ -129,12 +141,16 @@ local function makeCanInteract(option)
             if option.excludejobType and jobTypeCheck(option.excludejobType) then return false end
             if option.gang and not gangCheck(option.gang) then return false end
             if option.excludegang and gangCheck(option.excludegang) then return false end
-            if option.item and not exports.kora_inventory:HasItem(option.item) then return false end
+            if option.item then
+                local ok, has = pcall(function() return exports.kora_inventory:HasItem(option.item) end)
+                if not (ok and has) then return false end
+            end
             if option.citizenid and not citizenCheck(option.citizenid) then return false end
         end
         if isCallable(option.canInteract) then
-            -- Current qb-target passes this exact three-argument tuple.
-            return option.canInteract(entity, distance, data)
+            -- Current qb-target passes this exact three-argument tuple and hides
+            -- the option on any falsy result, including a bare `return`.
+            return option.canInteract(entity, distance, data) and true or false
         end
         return true
     end
@@ -920,10 +936,10 @@ end
 
 local function removePedTarget(ped, data, registrationId)
     if not registrationId then return end
-    if data.target and data.target.useModel then
-        Target.removeModel(data.model, registrationId)
-    else
-        Target.removeEntity(ped, registrationId)
+    -- Our own id: tear it down directly, whichever resource context this runs in.
+    for _, id in ipairs(type(registrationId) == 'table' and registrationId or { registrationId }) do
+        local record = legacyRecords[id]
+        if record then destroyRecord(record) else Target.destroyRegistration(id) end
     end
 end
 
@@ -1078,6 +1094,8 @@ local function RaycastCamera(flag, playerCoords)
     local hit, coords, entityHit = Kora.raycast.fromCamera(16.0, flag or -1)
     local ped = PlayerPedId and PlayerPedId() or 0
     playerCoords = playerCoords or GetEntityCoords(ped)
+    -- No hit: upstream returns a zero vector rather than nil.
+    if not coords then coords = vector3 and vector3(0.0, 0.0, 0.0) or { x = 0.0, y = 0.0, z = 0.0 } end
     local dx, dy, dz = coords.x - playerCoords.x, coords.y - playerCoords.y, coords.z - playerCoords.z
     local distance = math.sqrt(dx * dx + dy * dy + dz * dz)
     if flag == 30 and entityHit and entityHit ~= 0 and HasEntityClearLosToEntity then

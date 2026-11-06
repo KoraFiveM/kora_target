@@ -18,6 +18,7 @@ Target = Target or {}
 
 Target.registrations = {}  -- id -> {id, kind, options, distance, entities?/models?/entityType?/bones?, zoneHandle?}
 Target.byEntity = {}       -- entity -> {[id]=true}
+Target.byNetId = {}        -- netId -> {[id]=true}, networked entity registrations (a local handle changes when the entity re-streams)
 Target.byModel = {}        -- modelHash -> {[id]=true}
 Target.byGlobalType = {}   -- "ped"|"vehicle"|"object"|"player" -> {[id]=true}
 Target.byGlobalBone = {}   -- id -> {boneNames}
@@ -42,6 +43,16 @@ function Target.interactionsLocked()
     local state = LocalPlayer and LocalPlayer.state
     local mode = state and state['qbmultichar:mode']
     return mode ~= nil and mode ~= false
+end
+
+---Player-facing text from Config.target.text, falling back to the English default.
+---@param key string
+---@param default string
+---@return string
+function Target.text(key, default)
+    local text = Config.target.text
+    local value = type(text) == "table" and text[key] or nil
+    return type(value) == "string" and value ~= "" and value or default
 end
 
 local function touchRegistrations()
@@ -107,6 +118,17 @@ end
 local function hashModel(model)
     return type(model) == "string" and joaat(model) or model
 end
+
+-- Network id of a networked entity handle, or nil for a local entity / bad handle.
+local function networkIdOf(entity)
+    if type(entity) ~= "number" or entity == 0 or type(NetworkGetEntityIsNetworked) ~= "function" then return nil end
+    local ok, networked = pcall(NetworkGetEntityIsNetworked, entity)
+    if not ok or not networked then return nil end
+    local idOk, netId = pcall(NetworkGetNetworkIdFromEntity, entity)
+    if not idOk or type(netId) ~= "number" or netId == 0 then return nil end
+    return netId
+end
+Target._networkIdOf = networkIdOf
 
 ---@param options QBTargetOption[]
 ---@return QBTargetOption[]
@@ -481,6 +503,9 @@ function Target.destroyRegistration(id)
         for _, entity in ipairs(registration.entities) do
             removeFromIndex(Target.byEntity, entity, id)
         end
+        for _, netId in ipairs(registration.netIds or {}) do
+            removeFromIndex(Target.byNetId, netId, id)
+        end
     elseif registration.kind == "model" then
         for _, model in ipairs(registration.models) do
             removeFromIndex(Target.byModel, model, id)
@@ -504,6 +529,24 @@ end
 Target.ownership = Kora.resources.registry(function(id)
     Target.destroyRegistration(id)
 end)
+
+-- Ids restart at 1 with every kora_target start, so an id a consumer kept across
+-- a kora_target restart (or another resource's id) can name someone else's
+-- registration. Removal by id therefore checks the kind and, unless
+-- Config.target.ownerScopedRemoval is false, that the caller registered it.
+-- (An id that no longer exists keeps the old `true` return of the remove* calls.)
+local function mayRemove(id, kind)
+    local registration = Target.registrations[id]
+    if not registration or (kind and registration.kind ~= kind) then return false end
+    if Config.target.ownerScopedRemoval == false then return true end
+    local caller = GetInvokingResource()
+    if not caller or caller == GetCurrentResourceName() then return true end
+    local ok, owner = pcall(Target.ownership.owner, id)
+    if not ok or owner == nil or owner == caller then return true end
+    print(("[kora_target] %s tried to remove registration %s owned by %s; ignored"):format(caller, tostring(id), tostring(owner)))
+    return false
+end
+Target._mayRemove = mayRemove
 
 ---Shared by addEntity/addModel/addGlobalType/addGlobalBone: validates
 ---options, allocates an id, captures the real invoking resource, and tracks
@@ -547,10 +590,48 @@ function Target.addEntity(entity, options, defaultDistance)
         assert(type(e) == "number", "Entity handles must be numbers.")
     end
 
-    local registration = register("entity", { entities = entities }, options, defaultDistance)
+    -- Networked entities are also indexed by network id: their local handle
+    -- changes when they leave scope and stream back in.
+    local netIds = {}
+    for _, e in ipairs(entities) do netIds[#netIds + 1] = networkIdOf(e) end
+
+    local registration = register("entity", { entities = entities, netIds = netIds }, options, defaultDistance)
     for _, e in ipairs(entities) do addToIndex(Target.byEntity, e, registration.id) end
+    for _, netId in ipairs(netIds) do addToIndex(Target.byNetId, netId, registration.id) end
 
     return registration.id
+end
+
+---Internal (ox_target addEntity): registers options on network ids, which may
+---not exist locally yet. Currently streamed entities are indexed by handle too.
+---@param netIds number|number[]
+---@param options QBTargetOption[]
+---@param defaultDistance? number
+---@return integer id
+function Target._addNetworkEntity(netIds, options, defaultDistance)
+    local list = toArray(netIds)
+    assert(#list > 0, "addEntity requires at least one network id.")
+    local entities = {}
+    for _, netId in ipairs(list) do
+        assert(type(netId) == "number" and netId ~= 0, "Network ids must be non-zero numbers.")
+        local ok, entity = pcall(NetworkGetEntityFromNetworkId, netId)
+        if ok and type(entity) == "number" and entity ~= 0 then entities[#entities + 1] = entity end
+    end
+
+    local registration = register("entity", { entities = entities, netIds = list }, options, defaultDistance)
+    for _, e in ipairs(entities) do addToIndex(Target.byEntity, e, registration.id) end
+    for _, netId in ipairs(list) do addToIndex(Target.byNetId, netId, registration.id) end
+
+    return registration.id
+end
+
+---Internal (ox_target removeEntity): removes every registration indexed under a network id.
+---@param netId number
+---@return boolean removed
+function Target._removeNetworkEntity(netId)
+    local ids = idsOf(Target.byNetId[netId])
+    for _, regId in ipairs(ids) do Target.destroyRegistration(regId) end
+    return #ids > 0
 end
 
 ---Removes entity-scoped target registrations. Note this removes whole
@@ -564,11 +645,20 @@ function Target.removeEntity(entity, id)
     assert(type(entity) == "number", "entity must be a number.")
 
     if id then
+        if Target.registrations[id] and not mayRemove(id, "entity") then return false end
         Target.destroyRegistration(id)
         return true
     end
 
     local ids = idsOf(Target.byEntity[entity])
+    local netId = networkIdOf(entity)
+    if netId then
+        local seen = {}
+        for _, regId in ipairs(ids) do seen[regId] = true end
+        for regId in pairs(Target.byNetId[netId] or {}) do
+            if not seen[regId] then ids[#ids + 1] = regId end
+        end
+    end
     if #ids == 0 then return false end
 
     for _, regId in ipairs(ids) do Target.destroyRegistration(regId) end
@@ -604,6 +694,7 @@ end
 ---@return boolean removed
 function Target.removeModel(model, id)
     if id then
+        if Target.registrations[id] and not mayRemove(id, "model") then return false end
         Target.destroyRegistration(id)
         return true
     end
@@ -642,6 +733,7 @@ function Target.removeGlobalType(entityType, id)
     assert(GLOBAL_TYPES[entityType], "entityType must be 'ped', 'vehicle', 'object', or 'player'.")
 
     if id then
+        if Target.registrations[id] and not mayRemove(id, "globalType") then return false end
         Target.destroyRegistration(id)
         return true
     end
@@ -675,6 +767,7 @@ end
 ---@param id integer
 ---@return boolean removed
 function Target.removeGlobalBone(id)
+    if Target.registrations[id] and not mayRemove(id, "globalBone") then return false end
     Target.destroyRegistration(id)
     return true
 end
@@ -901,8 +994,7 @@ end
 ---@param id integer
 ---@return boolean removed
 function Target.removeZone(id)
-    local registration = Target.registrations[id]
-    if not registration or registration.kind ~= "zone" then return false end
+    if not mayRemove(id, "zone") then return false end
 
     Target.destroyRegistration(id)
     return true

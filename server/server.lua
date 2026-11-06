@@ -14,7 +14,7 @@ local ENTITY_VALIDATION_MESSAGES = {
 Kora.callback.register('qbtarget:server:runAction', function(src, name, netId, _clientDistance, ...)
     local action = serverActions[name]
     if not action then
-        return false, ('Unknown qbtarget server action: %s'):format(tostring(name))
+        return false, ('Unknown kora_target server action: %s'):format(tostring(name))
     end
 
     local entity, reason = Kora.world.resolveNetworkEntity(src, netId, { maxDistance = action.maxDistance })
@@ -26,7 +26,7 @@ Kora.callback.register('qbtarget:server:runAction', function(src, name, netId, _
     local ok = results[1]
 
     if not ok then
-        print(('[qbtarget] server action \'%s\' errored: %s'):format(name, tostring(results[2])))
+        print(('[kora_target] server action \'%s\' errored: %s'):format(name, tostring(results[2])))
         return false, 'Server action errored.'
     end
 
@@ -50,7 +50,7 @@ function ServerTarget.registerServerAction(name, handler, opts)
         'registerServerAction maxDistance must be within the configured server cap.')
 
     if serverActions[name] then
-        print(('[qbtarget] WARNING: server action \'%s\' is already registered -- overwriting the previous '
+        print(('[kora_target] WARNING: server action \'%s\' is already registered -- overwriting the previous '
             .. 'handler. Two resources (or a restarted resource) are registering the same action name.')
             :format(name))
     end

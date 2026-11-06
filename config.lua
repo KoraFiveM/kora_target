@@ -52,6 +52,19 @@ Config.target = {
     -- downed player open the eye, with only these options listed.
     allowWhileDead = {},
 
+    -- true (default): the eye cannot be opened and options do not run while the
+    -- player is cuffed (kora_police's koraCuffed state bag) or a kora_lib progress
+    -- bar is running, and an open eye or option menu closes when either starts.
+    blockWhileBusy = true,
+    -- State bag another resource sets to hold every UI shut (kora_emotemenu's
+    -- freecam, also read by kora_inventory and the phone). false/"" disables.
+    uiBlockBag = 'koraUiBlocked',
+    -- true (default): removeZone/removeEntity/removeModel/removeGlobalType/
+    -- removeGlobalBone given an id only remove a registration of that kind that
+    -- the calling resource made. Ids restart with kora_target, so an id kept
+    -- across a kora_target restart can otherwise remove another resource's target.
+    ownerScopedRemoval = true,
+
     -- true (default): targeting cannot be started while the player is seated in a
     -- vehicle (driver or passenger), and an open eye or option menu closes when
     -- they get in. Stops ATMs, peds and other world interactions being used from
@@ -170,6 +183,13 @@ Config.target = {
     showCloseHint = false,         -- show the GTA help message "Press Escape to close" for a few seconds when the multiple-option menu opens; false (default) shows nothing. Escape still closes the menu and pause-menu suppression is unaffected
     suppressPauseOnClose = true,   -- Escape closes the option menu without also opening the GTA pause menu (pause controls are blocked while the menu is open and briefly after it closes). Set false to leave pause-key handling alone.
     pauseSuppressMs = 250,         -- how long (milliseconds, 0-2000) the pause controls stay blocked after the menu closes; only used when suppressPauseOnClose is true
+
+    -- Player-facing text (English defaults; translate here).
+    text = {
+        closeHint = 'Press ~INPUT_FRONTEND_PAUSE_ALTERNATE~ to close', -- showCloseHint help message
+        optionCount = '%d options',                                    -- prompt label when several options are under the aim
+        goBack = 'Go back',                                            -- ox_target sub-menu back entry
+    },
 
     reticle = true,                -- draw a small centre-screen dot while holding the key, so targeting mode is VISIBLE even when nothing is under the crosshair (brightens over a target). Set false for a fully headless engine.
     demo = false,                  -- development-only global ped/vehicle targets; enable explicitly when testing kora_target itself.
