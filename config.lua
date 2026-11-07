@@ -149,7 +149,7 @@ Config.target = {
         height = 0.02,
         -- Fallback colour, also used when useThemeColour is false or kora_theme
         -- is not started.
-        colour = { r = 30, g = 144, b = 255, a = 220 },
+        colour = { r = 149, g = 255, b = 0, a = 220 }, -- Kora green, matching theme.json's primary
         -- Tint the icon with kora_theme's primary colour (alpha still comes from
         -- colour.a). Falls back to `colour` when kora_theme is unavailable.
         useThemeColour = true,
