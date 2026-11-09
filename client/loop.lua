@@ -607,7 +607,7 @@ local function aimSnapshot()
     return aimState
 end
 
-local function raycastTarget(snapshot, now)
+local function raycastTarget(snapshot, now, forceEntityProbe)
     snapshot = snapshot or aimSnapshot()
     now = now or GetGameTimer()
     local broadProbe = Kora.raycast.start(snapshot.cam, snapshot.destination, 511, snapshot.ignore or snapshot.ped)
@@ -615,7 +615,7 @@ local function raycastTarget(snapshot, now)
     if entity and entity ~= 0 then return hit, hitCoords, entity end
 
     local interval = Config.target.entityProbeInterval or 0
-    if interval > 0 and now - lastEntityProbeAt < interval then return hit, hitCoords, entity end
+    if not forceEntityProbe and interval > 0 and now - lastEntityProbeAt < interval then return hit, hitCoords, entity end
     lastEntityProbeAt = now
     local entityProbe = Kora.raycast.start(snapshot.cam, snapshot.destination, 26, snapshot.ignore or snapshot.ped)
 
@@ -765,6 +765,12 @@ local function menuTargetInRange(candidates)
     return false
 end
 
+local function fftSessionActive()
+    return GetConvar and GetConvar('fft_kora_hooks','false')=='true'
+        and GetResourceState('fft')=='started'
+        and type(LocalPlayer.state.fftSession)=='string'
+end
+
 local function runOption(candidate)
     if vehicleBlocked() and not allowsInVehicle(candidate.registration, candidate.option) then return end
     -- The snapshot may be older than the click: an option whose target has since
@@ -777,6 +783,13 @@ local function runOption(candidate)
     if Target.isBusy(true) then
         Target._cancelCurrentTargeting()
         return
+    end
+    if fftSessionActive() then
+        local entity=candidate.entity
+        local coords=entity and entity~=0 and GetEntityCoords(entity) or candidate.anchorCoords
+        TriggerEvent('fft:kora:target', {label=candidate.option.label,
+            model=entity and entity~=0 and GetEntityModel(entity) or nil,
+            coords=coords and {x=coords.x,y=coords.y,z=coords.z} or nil})
     end
     local ok, err
     if candidate.option._onSelectContext then
@@ -1153,6 +1166,40 @@ local targetKeybind = {
         selectCandidates(candidates)
     end,
 }
+-- Registered next to targetKeybind so replay uses the real targeting state machine.
+function Target.fftVersion() return 1 end
+function Target.fftAction(action,label,entity)
+    if action=='stop' and GetInvokingResource()=='fft' then forceRelease(); return true end
+    if GetInvokingResource()~='fft' or not fftSessionActive() then
+        return false,'FFT hooks are disabled or session is not authorised'
+    end
+    if action=='start' then targetKeybind.onPressed(); return true end
+    if action=='options' then
+        local result={}
+        for _,c in ipairs(currentCandidates) do result[#result+1]={label=c.option.label,entity=c.entity} end
+        return result
+    end
+    if action~='select' then return false,'Unsupported target action' end
+    if not holding or not Target.active or Target.interactionsLocked() or targetingBlocked() then return false,'Target prompt is not active' end
+    -- Resolve again against the live camera ray. Never invoke a registered option by ID alone.
+    local now=GetGameTimer()
+    local snapshot=aimSnapshot()
+    local hit,coords,hitEntity=raycastTarget(snapshot,now,true)
+    local candidates=resolveCandidates(hit,hitEntity,coords,now,snapshot.pedCoords)
+    local matches={}
+    for _,c in ipairs(candidates) do if c.option.label==label and c.entity==entity then matches[#matches+1]=c end end
+    if #matches==0 then return false,'Target option is no longer visible','not_visible' end
+    if #matches>1 then return false,('Found %d visible target options named %s on entity %s; check duplicate registrations'):format(#matches,label,tostring(entity)),'ambiguous' end
+    -- Raycast awaits yield; recheck gates before dispatching.
+    if not holding or not Target.active or Target.interactionsLocked() or targetingBlocked() then return false,'Target prompt is not active' end
+    local selected=matches[1]
+    holding=false
+    resetRuntimeState()
+    Target.active=false
+    selectCandidates({selected})
+    return true
+end
+
 Kora.keybind.add(targetKeybind)
 
 -- Stock qb-target names its hold commands +playerTarget/-playerTarget; scripts and keybind

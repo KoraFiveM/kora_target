@@ -15,3 +15,6 @@ exports('removeZone', Target.removeZone)
 exports('setEnabled', Target.setEnabled)
 exports('getState', Target.getState)
 exports('runServerAction', Target.runServerAction)
+
+exports('fftVersion', Target.fftVersion)
+exports('fftAction', Target.fftAction)
