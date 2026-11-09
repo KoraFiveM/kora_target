@@ -765,6 +765,19 @@ local function menuTargetInRange(candidates)
     return false
 end
 
+-- kora_qa hook: lets `When I select the "<label>" target option` complete on its
+-- own. Kora.qa.mark is a no-op unless the local player is running a QA
+-- scenario; pcall keeps kora_lib builds without the qa module harmless.
+local function qaMarkOption(candidate)
+    local option, registration = candidate.option, candidate.registration
+    local okOwner, owner = pcall(Target.ownership.owner, registration and registration.id)
+    Kora.qa.mark('target:option', {
+        label = option.label,
+        name = option.name,
+        resource = okOwner and owner or nil,
+    })
+end
+
 local function runOption(candidate)
     if vehicleBlocked() and not allowsInVehicle(candidate.registration, candidate.option) then return end
     -- The snapshot may be older than the click: an option whose target has since
@@ -778,6 +791,7 @@ local function runOption(candidate)
         Target._cancelCurrentTargeting()
         return
     end
+    pcall(qaMarkOption, candidate)
     local ok, err
     if candidate.option._onSelectContext then
         ok, err = pcall(candidate.option._onSelectContext, candidate)
