@@ -380,10 +380,10 @@ local function trackPolyZoneObject(name, kind, zone, targetOptions, distance, sp
     zone.name, zone.kind, zone.ids = name, kind, { id }
     zone.targetoptions = targetOptions
     zone.owner = GetInvokingResource() or GetCurrentResourceName()
-    zone._qbtargetDestroyed = false
+    zone._kora_targetDestroyed = false
     zone.destroy = function(self)
-        if self._qbtargetDestroyed then return end
-        self._qbtargetDestroyed = true
+        if self._kora_targetDestroyed then return end
+        self._kora_targetDestroyed = true
         if zonesByName[self.name] == self then zonesByName[self.name] = nil end
         if Target.registrations[id] then Target.destroyRegistration(id) end
         if isCallable(shapeDestroy) then shapeDestroy(self) end
@@ -656,10 +656,10 @@ local function AddComboZone(zones, options, targetOptions)
         combo.name, combo.kind, combo.ids = name, 'combo', ids
         combo.targetoptions = targetOptions
         combo.owner = GetInvokingResource() or GetCurrentResourceName()
-        combo._qbtargetDestroyed = false
+        combo._kora_targetDestroyed = false
         combo.destroy = function(self)
-            if self._qbtargetDestroyed then return end
-            self._qbtargetDestroyed = true
+            if self._kora_targetDestroyed then return end
+            self._kora_targetDestroyed = true
             if zonesByName[self.name] == self then zonesByName[self.name] = nil end
             for _, id in ipairs(ids) do
                 if Target.registrations[id] then Target.destroyRegistration(id) end

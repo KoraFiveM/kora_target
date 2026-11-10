@@ -265,8 +265,8 @@ default; see `sprites.enabled`, `drawDistance`, `useThemeColour`,
 Part of the [qbcore2](https://github.com/qbcore2) resource set:
 
 - [kora_lib](https://qbcore2.github.io/kora_lib/) — shared helper library
-- [qbsql](https://qbcore2.github.io/kora_sql/) — database driver
-- [qbcore](https://qbcore2.github.io/kora_core/) — framework core
-- [qbinventory](https://qbcore2.github.io/kora_inventory/) — headless inventory
-- [qbclothing](https://qbcore2.github.io/kora_clothing/) — clothing/wardrobe
+- [kora_sql](https://qbcore2.github.io/kora_sql/) — database driver
+- [kora_core](https://qbcore2.github.io/kora_core/) — framework core
+- [kora_inventory](https://qbcore2.github.io/kora_inventory/) — headless inventory
+- [kora_clothing](https://qbcore2.github.io/kora_clothing/) — clothing/wardrobe
 - [full resource list ↗](https://github.com/orgs/qbcore2/repositories)

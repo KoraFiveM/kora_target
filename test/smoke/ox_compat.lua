@@ -214,7 +214,7 @@ harness.test('isActive reflects the targeting session (Target.active), not what 
 end)
 
 
--- These invoke QBtarget's actual resolver/selector; native game and menu boundaries are inert.
+-- These invoke Koratarget's actual resolver/selector; native game and menu boundaries are inert.
 local function clearRegistrations()
     local ids = {}
     for id in pairs(Target.registrations) do ids[#ids + 1] = id end
@@ -850,7 +850,6 @@ harness.test('manifest does not claim the ox_target name', function()
     file:close()
     harness.assertTrue(not manifest:find("^%s*provide%s+['\"]ox_target['\"]") and not manifest:find("\n%s*provide%s+['\"]ox_target['\"]"), "kora_target must not provide 'ox_target'")
     harness.assertTrue(manifest:find("provide 'qb-target'", 1, true) ~= nil, "still provides 'qb-target'")
-    harness.assertTrue(manifest:find("provide 'qbtarget'", 1, true) ~= nil, "still provides 'qbtarget'")
 end)
 
 harness.test('a canInteract that returns nothing hides the option, as upstream ox_target does', function()
@@ -871,4 +870,4 @@ harness.test('addEntity keeps network-id targets for entities that are not strea
     clearRegistrations()
 end)
 
-harness.report('qbtarget ox_target compatibility')
+harness.report('kora_target ox_target compatibility')

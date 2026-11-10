@@ -3,8 +3,6 @@ game 'gta5'
 lua54 'yes'
 
 name 'kora_target'
--- Keep the legacy resource name resolvable for exports['qbtarget'] callers.
-provide 'qbtarget'
 author 'Jamie'
 version '1.0.0'
 description 'World/zone/model targeting engine built on kora_lib'
@@ -53,7 +51,9 @@ client_scripts {
     'client/loop.lua',
     'client/exports.lua',
     'client/compat/qb-target.lua',
-    'client/compat/ox-target.lua'
+    'client/compat/ox-target.lua',
+    -- Optional FFT hooks: returns immediately unless fft_kora_hooks is true.
+    'fft_hooks.lua'
 }
 
 server_scripts {

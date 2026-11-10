@@ -607,7 +607,7 @@ local function aimSnapshot()
     return aimState
 end
 
-local function raycastTarget(snapshot, now)
+local function raycastTarget(snapshot, now, forceEntityProbe)
     snapshot = snapshot or aimSnapshot()
     now = now or GetGameTimer()
     local broadProbe = Kora.raycast.start(snapshot.cam, snapshot.destination, 511, snapshot.ignore or snapshot.ped)
@@ -615,7 +615,7 @@ local function raycastTarget(snapshot, now)
     if entity and entity ~= 0 then return hit, hitCoords, entity end
 
     local interval = Config.target.entityProbeInterval or 0
-    if interval > 0 and now - lastEntityProbeAt < interval then return hit, hitCoords, entity end
+    if not forceEntityProbe and interval > 0 and now - lastEntityProbeAt < interval then return hit, hitCoords, entity end
     lastEntityProbeAt = now
     local entityProbe = Kora.raycast.start(snapshot.cam, snapshot.destination, 26, snapshot.ignore or snapshot.ped)
 
@@ -645,7 +645,7 @@ syncTargetHud = function(active, candidates)
     if not active then
         if not hudActive then return end
         hudActive, hudRegistrationId, hudEntity, hudOption, hudOptionCount = false, nil, nil, nil, 0
-        Kora.nui.send('qbtarget:target', { active = false })
+        Kora.nui.send('kora_target:target', { active = false })
         return
     end
 
@@ -663,7 +663,7 @@ syncTargetHud = function(active, candidates)
     hudActive, hudRegistrationId, hudEntity = true, registrationId, entity
     hudOption, hudOptionCount = option, optionCount
 
-    Kora.nui.send('qbtarget:target', {
+    Kora.nui.send('kora_target:target', {
         active = true,
         label = top and (optionCount == 1 and option.label or (Target.text('optionCount', '%d options')):format(optionCount)) or nil,
         optionCount = optionCount,
@@ -791,6 +791,8 @@ local function runOption(candidate)
         Target._cancelCurrentTargeting()
         return
     end
+    -- Sole FFT seam: fft_hooks.lua (opt-in) observes selections that passed every gate.
+    if Target._fftSelected then Target._fftSelected(candidate) end
     pcall(qaMarkOption, candidate)
     local ok, err
     if candidate.option._onSelectContext then
@@ -1186,7 +1188,7 @@ end
 
 -- Runtime override via Kora.zones.setDebug(nil, ...) for zones already created; config is only read at registration.
 -- `[on|off]`, or no argument to toggle.
-RegisterCommand('qbtarget_debug', function(_, args)
+RegisterCommand('kora_target_debug', function(_, args)
     local arg = args[1] and tostring(args[1]):lower() or nil
     local enabled
 
@@ -1197,7 +1199,7 @@ RegisterCommand('qbtarget_debug', function(_, args)
     elseif arg == nil then
         enabled = not Target.debugEnabled
     else
-        print(("[kora_target] qbtarget_debug: unrecognised argument '%s' -- use 'on', 'off', or no argument to toggle."):format(arg))
+        print(("[kora_target] kora_target_debug: unrecognised argument '%s' -- use 'on', 'off', or no argument to toggle."):format(arg))
         return
     end
 

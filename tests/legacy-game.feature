@@ -466,23 +466,23 @@ Feature: kora_target — game tests
     And there should be no script errors
 
   @kora_target @legacy:tgt-debug-outlines @target:1 @checklist @checklist:kora_target:debug-command @cat:core-and-libraries
-  Scenario: Show target zone outlines with /qbtarget_debug
+  Scenario: Show target zone outlines with /kora_target_debug
     """
     1. Go to a 24/7 store or another spot with a shop counter.
-    2. Type /qbtarget_debug on, then look around. Check F8.
-    3. Type /qbtarget_debug off. Then type /qbtarget_debug banana.
+    2. Type /kora_target_debug on, then look around. Check F8.
+    3. Type /kora_target_debug off. Then type /kora_target_debug banana.
     Expect: 'on' prints 'target zone debug drawing enabled' in F8 and outlines appear around target zones. 'off' prints 'disabled' and removes them. 'banana' prints an 'unrecognised argument' message and changes nothing.
-    Also checklist kora_target:debug-command (/koratarget_debug command): Run /koratarget_debug to toggle zone debug drawing (diagnostic). Note: /koratarget_debug was called /qbtarget_debug.
+    Also checklist kora_target:debug-command (/koratarget_debug command): Run /koratarget_debug to toggle zone debug drawing (diagnostic). Note: /koratarget_debug was called /kora_target_debug.
     """
     When I manually: go to a 24/7 store or another spot with a shop counter
-    And I run the command "/qbtarget_debug on"
+    And I run the command "/kora_target_debug on"
     And I manually: look around and check F8
     And the F8 console should show "target zone debug drawing enabled"
     Then I confirm: outlines appear around target zones
-    When I run the command "/qbtarget_debug off"
+    When I run the command "/kora_target_debug off"
     And the F8 console should show "disabled"
     Then I confirm: the outlines are removed
-    When I run the command "/qbtarget_debug banana"
+    When I run the command "/kora_target_debug banana"
     And the F8 console should show "unrecognised argument"
     Then I confirm: nothing changes
 
