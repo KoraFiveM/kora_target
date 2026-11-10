@@ -64,3 +64,6 @@ server_scripts {
 -- to client/loop.lua (Config.target.recovery.nuiListener). It never takes focus.
 ui_page 'ui/focus.html'
 files { 'ui/focus.html' }
+
+-- kora_qa: Gherkin test scenarios (converted legacy tests), see [kora]/kora_qa/README.md
+qa_feature 'tests/*.feature'
