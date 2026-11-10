@@ -11,7 +11,7 @@
 if GetConvar('fft_kora_hooks', 'false') ~= 'true' then return end
 
 local RUNNER = 'fft'
-local VERSION = 2
+local VERSION = 3
 
 local function session()
     if GetResourceState(RUNNER) ~= 'started' then return nil end
@@ -109,6 +109,104 @@ function actions.probe()
     }
 end
 
+-- Read-only aiming aid: world points worth putting under the crosshair for an
+-- option label, nearest first. Zones return sample points inside the zone
+-- (the resolver tests the ray's hit point against the zone); entity and model
+-- registrations return the entity's position and handle. Nothing is selected
+-- or invoked here; the runner aims at a point and then goes through `select`.
+local ZONE_OFFSETS = { 0.0, -0.35, 0.35, -0.7, 0.7 }
+-- Low samples first: a ray through a point at standing height carries on to
+-- the floor beyond the zone, while a floor-level point is where it lands.
+local ZONE_HEIGHTS = { -0.9, -1.2, -0.6, 0.0, -0.3, 0.3 }
+local PER_HEIGHT = 3
+
+local GLOBAL_POOLS = { vehicle = 'CVehicle', ped = 'CPed', player = 'CPed', object = 'CObject' }
+
+local function hasLabel(registration, label)
+    for _, option in ipairs(registration.options or {}) do
+        if option.label == label then return true end
+    end
+    return false
+end
+
+local function modelEntities(models, origin, radius, out)
+    local wanted = {}
+    for _, model in ipairs(models or {}) do wanted[model] = true end
+    for _, pool in ipairs({ 'CObject', 'CPed', 'CVehicle' }) do
+        for _, entity in ipairs(GetGamePool(pool)) do
+            if wanted[GetEntityModel(entity)] and #(GetEntityCoords(entity) - origin) <= radius then out[#out + 1] = entity end
+        end
+    end
+end
+
+---@param label string
+---@param radius? number metres around the ped (default 30)
+---@return table[] points `{ x, y, z, entity?, zone? }`, nearest first, at most 24
+function actions.locate(label, radius)
+    if type(label) ~= 'string' or #label > 200 then return {} end
+    radius = math.min(tonumber(radius) or 30.0, 100.0)
+    local origin = GetEntityCoords(PlayerPedId())
+    local points = {}
+    local seq = 0
+    -- `anchor` ranks a zone's samples by the zone centre so they keep their
+    -- low-first order; entities rank by their own position.
+    local function add(point, entity, zone, anchor)
+        local d = #(vector3(point.x, point.y, point.z) - origin)
+        if d > radius then return end
+        seq = seq + 1
+        local rank = anchor and #(vector3(anchor.x, anchor.y, anchor.z) - origin) or d
+        points[#points + 1] = { x = point.x, y = point.y, z = point.z, entity = entity, zone = zone, d = rank, seq = seq }
+    end
+    for id, registration in pairs(Target.registrations) do
+        if hasLabel(registration, label) then
+            if registration.kind == 'zone' and registration.zoneHandle and registration.spriteCoords then
+                local c, inside = registration.spriteCoords, 0
+                for _, dz in ipairs(ZONE_HEIGHTS) do
+                    local level = 0
+                    for _, dx in ipairs(ZONE_OFFSETS) do
+                        for _, dy in ipairs(ZONE_OFFSETS) do
+                            local p = vector3(c.x + dx, c.y + dy, c.z + dz)
+                            local ok, contained = pcall(registration.zoneHandle.contains, p)
+                            if level < PER_HEIGHT and ok and contained then
+                                level, inside = level + 1, inside + 1
+                                add(p, nil, id, c)
+                            end
+                        end
+                    end
+                end
+                if inside == 0 then add(c, nil, id, c) end
+            else
+                local entities = {}
+                for _, entity in ipairs(registration.entities or {}) do entities[#entities + 1] = entity end
+                for _, netId in ipairs(registration.netIds or {}) do
+                    if netId and NetworkDoesNetworkIdExist(netId) then entities[#entities + 1] = NetworkGetEntityFromNetworkId(netId) end
+                end
+                if registration.kind == 'model' then modelEntities(registration.models, origin, radius, entities) end
+                if registration.kind == 'globalType' then
+                    -- Every entity of the type qualifies; only nearby ones are useful aims.
+                    local pool = GLOBAL_POOLS[registration.entityType]
+                    local ped = PlayerPedId()
+                    for _, entity in ipairs(pool and GetGamePool(pool) or {}) do
+                        if entity ~= ped and #(GetEntityCoords(entity) - origin) <= 8.0
+                            and (registration.entityType ~= 'player' or IsPedAPlayer(entity))
+                            and (registration.entityType ~= 'ped' or not IsPedAPlayer(entity)) then
+                            entities[#entities + 1] = entity
+                        end
+                    end
+                end
+                for _, entity in ipairs(entities) do
+                    if type(entity) == 'number' and entity ~= 0 and DoesEntityExist(entity) then
+                        add(GetEntityCoords(entity), entity, nil)
+                    end
+                end
+            end
+        end
+    end
+    table.sort(points, function(a, b) if a.d ~= b.d then return a.d < b.d end return a.seq < b.seq end)
+    for i = #points, 25, -1 do points[i] = nil end
+    return points
+end
+
 function actions.state()
     return { enabled = Target.enabled, active = Target.active, success = Target.success, hovering = hovering(),
         selections = selections }
@@ -131,10 +229,10 @@ function actions.select(label, entity)
         if selections == before then
             return false, 'Target option did not run (out of range, in a vehicle, downed or busy)', 'rejected'
         end
-        return true, nil, 'selected'
+        return true, false, 'selected'
     end
     release()
-    return true, nil, 'menu'
+    return true, false, 'menu'
 end
 
 exports('fftVersion', function() return VERSION end)
