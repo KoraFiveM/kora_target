@@ -287,7 +287,7 @@ harness.test('runtime PolyZone objects retain their public methods and own targe
     harness.assertTrue(Target.registrations[id] == nil, 'destroy must also remove the target registration')
 end)
 
-harness.test('AddComboZone registers one qbtarget zone per sub-zone definition', function()
+harness.test('AddComboZone registers one kora_target zone per sub-zone definition', function()
     local zone = { isPointInside = function() return false end }
     local combo = addComboZone({ zone, zone }, { name = 'combo-smoke' }, opts('Combo Option'))
 
@@ -620,4 +620,4 @@ harness.test('job and gang filters tolerate an empty PlayerData between characte
     qbCorePlayerData.job, qbCorePlayerData.gang = job, gang
 end)
 
-harness.report('qbtarget qb-target compatibility')
+harness.report('kora_target qb-target compatibility')

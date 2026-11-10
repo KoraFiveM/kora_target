@@ -37,7 +37,7 @@ local function makeZoneHandle(options)
 end
 
 -- Records calls rather than doing anything real (like makeZoneHandle above) --
--- the qbtarget_debug command test only needs to prove client/loop.lua calls
+-- the kora_target_debug command test only needs to prove client/loop.lua calls
 -- through to Kora.zones.setDebug with the right (id, enabled) pair, not kora_lib's
 -- own runtime toggle behaviour (covered separately in kora_lib's own test suite).
 local setDebugCalls = {}
@@ -191,7 +191,7 @@ harness.test('disabling targeting closes a target selector and restores player m
 end)
 
 harness.test('sprite worker is lazy and requires a sprite-enabled zone', function()
-    harness.assertTrue(not sprites.isRunning(), 'loading qbtarget with no zones must not create a sprite worker')
+    harness.assertTrue(not sprites.isRunning(), 'loading kora_target with no zones must not create a sprite worker')
 
     local previousEnabled = Config.target.sprites.enabled
     Config.target.sprites.enabled = false
@@ -231,8 +231,8 @@ end)
 
 harness.test('a live kora_lib config update invalidates target resolver caches', function()
     local binding = configBindings.kora_target
-    harness.assertTrue(binding ~= nil, 'qbtarget must bind its active config through kora_lib')
-    harness.assertEqual(binding.path[1], 'target', 'the binding should receive only qbtarget settings')
+    harness.assertTrue(binding ~= nil, 'kora_target must bind its active config through kora_lib')
+    harness.assertEqual(binding.path[1], 'target', 'the binding should receive only kora_target settings')
 
     local revision = Target.registrationRevision
     local settings = {}
@@ -604,14 +604,14 @@ harness.test('a faulting GetEntityModel handle is remembered and not re-invoked 
     _G.GetEntityModel = originalModel
 end)
 
-harness.test('qbtarget_debug command toggles every target zone through Kora.zones.setDebug(nil, ...)', function()
+harness.test('kora_target_debug command toggles every target zone through Kora.zones.setDebug(nil, ...)', function()
     -- client/loop.lua's own module chunk (loaded via dofile below, alongside
     -- state.lua) registers this -- Config.target.debug/zoneDebugEnabled stay
     -- the creation-time default; this command is the runtime override layered
     -- on top of kora_lib's Kora.zones.setDebug, so it must reach Kora.zones.setDebug
     -- with (nil, enabled) rather than touching any single zone's own handle.
-    local handler = commands['qbtarget_debug']
-    harness.assertTrue(handler ~= nil, 'client/loop.lua must register a qbtarget_debug command')
+    local handler = commands['kora_target_debug']
+    harness.assertTrue(handler ~= nil, 'client/loop.lua must register a kora_target_debug command')
 
     setDebugCalls = {}
     Target.debugEnabled = false
@@ -1359,4 +1359,4 @@ harness.test('removal by id refuses another resource\'s registration and the wro
     _G.GetInvokingResource = savedInvoker
 end)
 
-harness.report('qbtarget runtime')
+harness.report('kora_target runtime')

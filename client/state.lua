@@ -1,6 +1,6 @@
----@alias QBTargetGlobalType "ped" | "vehicle" | "object" | "player"
+---@alias KoraTargetGlobalType "ped" | "vehicle" | "object" | "player"
 
----@class QBTargetOption
+---@class KoraTargetOption
 ---@field label string
 ---@field icon? string
 ---@field distance? number Overrides the registration's own default distance.
@@ -27,7 +27,7 @@ Target.enabled = true
 Target.hovering = nil      -- maintained by client/loop.lua each tick
 Target.active = false      -- true while the targeting key/toggle is active
 Target.success = false     -- true while at least one candidate is resolved
--- Tracks only the qbtarget_debug command's own on/off state (client/loop.lua)
+-- Tracks only the kora_target_debug command's own on/off state (client/loop.lua)
 -- so its no-arg toggle has something local to flip against -- separate from
 -- Config.target.debug, which stays the creation-time default and is never
 -- mutated at runtime.
@@ -41,7 +41,7 @@ Target.registrationRevision = 0
 -- actions (beds, banking, doors, etc.) while the player is choosing a spawn.
 function Target.interactionsLocked()
     local state = LocalPlayer and LocalPlayer.state
-    local mode = state and state['qbmultichar:mode']
+    local mode = state and state['kora_multichar:mode']
     return mode ~= nil and mode ~= false
 end
 
@@ -130,8 +130,8 @@ local function networkIdOf(entity)
 end
 Target._networkIdOf = networkIdOf
 
----@param options QBTargetOption[]
----@return QBTargetOption[]
+---@param options KoraTargetOption[]
+---@return KoraTargetOption[]
 local function validateOptions(options)
     assert(type(options) == "table" and #options > 0, "options must be a non-empty array of target options.")
 
@@ -165,7 +165,7 @@ end
 ---client/exports.lua; qb-target's labeled remove/update API needs option-level
 ---mutation while kora_target's native public API remains registration-oriented.
 ---@param id integer
----@param options QBTargetOption[]
+---@param options KoraTargetOption[]
 ---@param defaultDistance? number
 ---@return boolean updated
 function Target._replaceOptions(id, options, defaultDistance)
@@ -555,7 +555,7 @@ Target._mayRemove = mayRemove
 ---own `data` field), so they build their registration record directly.
 ---@param kind string
 ---@param extra table Additional fields merged onto the registration (e.g. `entities`, `models`).
----@param options QBTargetOption[]
+---@param options KoraTargetOption[]
 ---@param defaultDistance number?
 ---@return table registration
 local function register(kind, extra, options, defaultDistance)
@@ -576,7 +576,7 @@ end
 
 ---Registers target options on one or more specific entity handles.
 ---@param entity number|number[]
----@param options QBTargetOption[]
+---@param options KoraTargetOption[]
 ---@param defaultDistance? number
 ---@return integer id
 function Target.addEntity(entity, options, defaultDistance)
@@ -605,7 +605,7 @@ end
 ---Internal (ox_target addEntity): registers options on network ids, which may
 ---not exist locally yet. Currently streamed entities are indexed by handle too.
 ---@param netIds number|number[]
----@param options QBTargetOption[]
+---@param options KoraTargetOption[]
 ---@param defaultDistance? number
 ---@return integer id
 function Target._addNetworkEntity(netIds, options, defaultDistance)
@@ -668,7 +668,7 @@ end
 ---Registers target options on every current and future entity spawned with
 ---any of the given models.
 ---@param model number|string|(number|string)[]
----@param options QBTargetOption[]
+---@param options KoraTargetOption[]
 ---@param defaultDistance? number
 ---@return integer id
 function Target.addModel(model, options, defaultDistance)
@@ -713,8 +713,8 @@ end
 
 ---Registers target options on every entity of a given type -- e.g. every ped
 ---in the world, or every player.
----@param entityType QBTargetGlobalType
----@param options QBTargetOption[]
+---@param entityType KoraTargetGlobalType
+---@param options KoraTargetOption[]
 ---@param defaultDistance? number
 ---@return integer id
 function Target.addGlobalType(entityType, options, defaultDistance)
@@ -726,7 +726,7 @@ function Target.addGlobalType(entityType, options, defaultDistance)
     return registration.id
 end
 
----@param entityType QBTargetGlobalType
+---@param entityType KoraTargetGlobalType
 ---@param id? integer When given, only that registration is removed.
 ---@return boolean removed
 function Target.removeGlobalType(entityType, id)
@@ -748,7 +748,7 @@ end
 ---Registers target options on ANY entity, of any type, that has a matching
 ---bone -- e.g. every vehicle's "boot" bone, regardless of vehicle model.
 ---@param bones string|string[]
----@param options QBTargetOption[]
+---@param options KoraTargetOption[]
 ---@param defaultDistance? number
 ---@return integer id
 function Target.addGlobalBone(bones, options, defaultDistance)
@@ -777,7 +777,7 @@ end
 ---`bones = { bone }` on each option itself.
 ---@param entity number
 ---@param bone string
----@param options QBTargetOption[]
+---@param options KoraTargetOption[]
 ---@param defaultDistance? number
 ---@return integer id
 function Target.addTargetBone(entity, bone, options, defaultDistance)
@@ -795,17 +795,17 @@ function Target.addTargetBone(entity, bone, options, defaultDistance)
     return Target.addEntity(entity, boned, defaultDistance)
 end
 
----@class QBTargetBoxZoneOptions
+---@class KoraTargetBoxZoneOptions
 ---@field coords any Box center.
 ---@field size any Full extents (x, y, z).
 ---@field rotation? number Degrees around the Z axis.
----@field options QBTargetOption[]
+---@field options KoraTargetOption[]
 ---@field distance? number
 ---@field debug? boolean
 ---@field drawSprite? boolean Set false to hide this zone's configured sprite.
 ---@field allowInVehicle? boolean Default for every option in this zone that does not set its own allowInVehicle; true keeps them usable while seated in a vehicle.
 
----@param zoneOptions QBTargetBoxZoneOptions
+---@param zoneOptions KoraTargetBoxZoneOptions
 ---@return integer id
 function Target.addBoxZone(zoneOptions)
     assert(type(zoneOptions) == "table", "addBoxZone requires an options table.")
@@ -843,16 +843,16 @@ function Target.addBoxZone(zoneOptions)
     return id
 end
 
----@class QBTargetSphereZoneOptions
+---@class KoraTargetSphereZoneOptions
 ---@field coords any Sphere center.
 ---@field radius number
----@field options QBTargetOption[]
+---@field options KoraTargetOption[]
 ---@field distance? number
 ---@field debug? boolean
 ---@field drawSprite? boolean Set false to hide this zone's configured sprite.
 ---@field allowInVehicle? boolean Default for every option in this zone that does not set its own allowInVehicle; true keeps them usable while seated in a vehicle.
 
----@param zoneOptions QBTargetSphereZoneOptions
+---@param zoneOptions KoraTargetSphereZoneOptions
 ---@return integer id
 function Target.addSphereZone(zoneOptions)
     assert(type(zoneOptions) == "table", "addSphereZone requires an options table.")
@@ -888,18 +888,18 @@ function Target.addSphereZone(zoneOptions)
     return id
 end
 
----@class QBTargetPolyZoneOptions
+---@class KoraTargetPolyZoneOptions
 ---@field points any[] At least 3 points.
 ---@field thickness? number
 ---@field minZ? number
 ---@field maxZ? number
----@field options QBTargetOption[]
+---@field options KoraTargetOption[]
 ---@field distance? number
 ---@field debug? boolean
 ---@field drawSprite? boolean Set false to hide this zone's configured sprite.
 ---@field allowInVehicle? boolean Default for every option in this zone that does not set its own allowInVehicle; true keeps them usable while seated in a vehicle.
 
----@param zoneOptions QBTargetPolyZoneOptions
+---@param zoneOptions KoraTargetPolyZoneOptions
 ---@return integer id
 function Target.addPolyZone(zoneOptions)
     assert(type(zoneOptions) == "table", "addPolyZone requires an options table.")
@@ -942,7 +942,7 @@ end
 
 ---Internal: zone supplied by another resource (e.g. qb-target AddComboZone); needs only a contains predicate.
 ---@param contains fun(point: any): boolean
----@param options QBTargetOption[]
+---@param options KoraTargetOption[]
 ---@param defaultDistance? number
 ---@param spriteCoords? any
 ---@param drawSprite? boolean
@@ -1045,7 +1045,7 @@ function Target.runServerAction(name, entity, maxDistance, ...)
         netId = NetworkGetNetworkIdFromEntity(entity)
     end
 
-    return Kora.callback.trigger("qbtarget:server:runAction", name, netId, maxDistance, ...)
+    return Kora.callback.trigger("kora_target:server:runAction", name, netId, maxDistance, ...)
 end
 
 -- kora_lib invokes the binding once with the hydrated active snapshot and again

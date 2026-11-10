@@ -276,7 +276,7 @@ end
 -- Translates ox_target's option shape ({name?, icon, label, distance?,
 -- bones?, canInteract?, onSelect?, export?, event?, serverEvent?, command?,
 -- groups?, items?, anyItem?, offset?, menuName?, openMenu?}) into
--- kora_target's own QBTargetOption shape. `distance`/`bones` map 1:1 --
+-- kora_target's own KoraTargetOption shape. `distance`/`bones` map 1:1 --
 -- ox_target already stores these per-option, unlike qb-target. Everything
 -- else is enforced in the canInteract wrapper below, in upstream's order:
 -- menu, groups, items, offset, then the caller's own canInteract.

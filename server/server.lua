@@ -11,7 +11,7 @@ local ENTITY_VALIDATION_MESSAGES = {
 }
 
 -- Replies with (ok, ...) directly: true plus the handler's return values, or false plus a reason string.
-Kora.callback.register('qbtarget:server:runAction', function(src, name, netId, _clientDistance, ...)
+Kora.callback.register('kora_target:server:runAction', function(src, name, netId, _clientDistance, ...)
     local action = serverActions[name]
     if not action then
         return false, ('Unknown kora_target server action: %s'):format(tostring(name))

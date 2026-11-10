@@ -645,7 +645,7 @@ syncTargetHud = function(active, candidates)
     if not active then
         if not hudActive then return end
         hudActive, hudRegistrationId, hudEntity, hudOption, hudOptionCount = false, nil, nil, nil, 0
-        Kora.nui.send('qbtarget:target', { active = false })
+        Kora.nui.send('kora_target:target', { active = false })
         return
     end
 
@@ -663,7 +663,7 @@ syncTargetHud = function(active, candidates)
     hudActive, hudRegistrationId, hudEntity = true, registrationId, entity
     hudOption, hudOptionCount = option, optionCount
 
-    Kora.nui.send('qbtarget:target', {
+    Kora.nui.send('kora_target:target', {
         active = true,
         label = top and (optionCount == 1 and option.label or (Target.text('optionCount', '%d options')):format(optionCount)) or nil,
         optionCount = optionCount,
@@ -765,12 +765,6 @@ local function menuTargetInRange(candidates)
     return false
 end
 
-local function fftSessionActive()
-    return GetConvar and GetConvar('fft_kora_hooks','false')=='true'
-        and GetResourceState('fft')=='started'
-        and type(LocalPlayer.state.fftSession)=='string'
-end
-
 local function runOption(candidate)
     if vehicleBlocked() and not allowsInVehicle(candidate.registration, candidate.option) then return end
     -- The snapshot may be older than the click: an option whose target has since
@@ -784,13 +778,8 @@ local function runOption(candidate)
         Target._cancelCurrentTargeting()
         return
     end
-    if fftSessionActive() then
-        local entity=candidate.entity
-        local coords=entity and entity~=0 and GetEntityCoords(entity) or candidate.anchorCoords
-        TriggerEvent('fft:kora:target', {label=candidate.option.label,
-            model=entity and entity~=0 and GetEntityModel(entity) or nil,
-            coords=coords and {x=coords.x,y=coords.y,z=coords.z} or nil})
-    end
+    -- Sole FFT seam: fft_hooks.lua (opt-in) observes selections that passed every gate.
+    if Target._fftSelected then Target._fftSelected(candidate) end
     local ok, err
     if candidate.option._onSelectContext then
         ok, err = pcall(candidate.option._onSelectContext, candidate)
@@ -1166,40 +1155,6 @@ local targetKeybind = {
         selectCandidates(candidates)
     end,
 }
--- Registered next to targetKeybind so replay uses the real targeting state machine.
-function Target.fftVersion() return 1 end
-function Target.fftAction(action,label,entity)
-    if action=='stop' and GetInvokingResource()=='fft' then forceRelease(); return true end
-    if GetInvokingResource()~='fft' or not fftSessionActive() then
-        return false,'FFT hooks are disabled or session is not authorised'
-    end
-    if action=='start' then targetKeybind.onPressed(); return true end
-    if action=='options' then
-        local result={}
-        for _,c in ipairs(currentCandidates) do result[#result+1]={label=c.option.label,entity=c.entity} end
-        return result
-    end
-    if action~='select' then return false,'Unsupported target action' end
-    if not holding or not Target.active or Target.interactionsLocked() or targetingBlocked() then return false,'Target prompt is not active' end
-    -- Resolve again against the live camera ray. Never invoke a registered option by ID alone.
-    local now=GetGameTimer()
-    local snapshot=aimSnapshot()
-    local hit,coords,hitEntity=raycastTarget(snapshot,now,true)
-    local candidates=resolveCandidates(hit,hitEntity,coords,now,snapshot.pedCoords)
-    local matches={}
-    for _,c in ipairs(candidates) do if c.option.label==label and c.entity==entity then matches[#matches+1]=c end end
-    if #matches==0 then return false,'Target option is no longer visible','not_visible' end
-    if #matches>1 then return false,('Found %d visible target options named %s on entity %s; check duplicate registrations'):format(#matches,label,tostring(entity)),'ambiguous' end
-    -- Raycast awaits yield; recheck gates before dispatching.
-    if not holding or not Target.active or Target.interactionsLocked() or targetingBlocked() then return false,'Target prompt is not active' end
-    local selected=matches[1]
-    holding=false
-    resetRuntimeState()
-    Target.active=false
-    selectCandidates({selected})
-    return true
-end
-
 Kora.keybind.add(targetKeybind)
 
 -- Stock qb-target names its hold commands +playerTarget/-playerTarget; scripts and keybind
@@ -1219,7 +1174,7 @@ end
 
 -- Runtime override via Kora.zones.setDebug(nil, ...) for zones already created; config is only read at registration.
 -- `[on|off]`, or no argument to toggle.
-RegisterCommand('qbtarget_debug', function(_, args)
+RegisterCommand('kora_target_debug', function(_, args)
     local arg = args[1] and tostring(args[1]):lower() or nil
     local enabled
 
@@ -1230,7 +1185,7 @@ RegisterCommand('qbtarget_debug', function(_, args)
     elseif arg == nil then
         enabled = not Target.debugEnabled
     else
-        print(("[kora_target] qbtarget_debug: unrecognised argument '%s' -- use 'on', 'off', or no argument to toggle."):format(arg))
+        print(("[kora_target] kora_target_debug: unrecognised argument '%s' -- use 'on', 'off', or no argument to toggle."):format(arg))
         return
     end
 
