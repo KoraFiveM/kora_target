@@ -129,6 +129,19 @@ local function hasLabel(registration, label)
     return false
 end
 
+-- The middle of an entity's model bounds. A prop's origin is often at its base
+-- (fuel pumps, chargers, benches): aiming there lands on the ground in front.
+local function entityCentre(entity)
+    local at = GetEntityCoords(entity)
+    local model = entityModel(entity)
+    if not model then return at end
+    local ok, low, high = pcall(GetModelDimensions, model)
+    if not ok or not low or not high then return at end
+    local ok2, centre = pcall(GetOffsetFromEntityInWorldCoords, entity,
+        (low.x + high.x) * 0.5, (low.y + high.y) * 0.5, (low.z + high.z) * 0.5)
+    return ok2 and centre or at
+end
+
 local function modelEntities(models, origin, radius, out)
     local wanted = {}
     for _, model in ipairs(models or {}) do wanted[model] = true end
@@ -196,7 +209,7 @@ function actions.locate(label, radius)
                 end
                 for _, entity in ipairs(entities) do
                     if type(entity) == 'number' and entity ~= 0 and DoesEntityExist(entity) then
-                        add(GetEntityCoords(entity), entity, nil)
+                        add(entityCentre(entity), entity, nil)
                     end
                 end
             end
@@ -205,6 +218,19 @@ function actions.locate(label, radius)
     table.sort(points, function(a, b) if a.d ~= b.d then return a.d < b.d end return a.seq < b.seq end)
     for i = #points, 25, -1 do points[i] = nil end
     return points
+end
+
+-- Calls one public export in this VM and reports a refusal's message. A raised
+-- error crossing the export boundary reaches the caller as nil, so refusal
+-- tests could not otherwise read it. Same function, same validation.
+local PUBLIC = { addEntity = true, removeEntity = true, addModel = true, removeModel = true, addGlobalType = true,
+    removeGlobalType = true, addGlobalBone = true, removeGlobalBone = true, addTargetBone = true, addBoxZone = true,
+    addSphereZone = true, addPolyZone = true, removeZone = true, setEnabled = true, getState = true, runServerAction = true }
+function actions.call(name, ...)
+    if not PUBLIC[name] or type(Target[name]) ~= 'function' then return false, 'Not a kora_target export: ' .. tostring(name) end
+    local ok, result = pcall(Target[name], ...)
+    if not ok then return false, (tostring(result):gsub('^[^%s:]+%.lua:%d+: ', '', 1)) end
+    return true, result
 end
 
 function actions.state()
