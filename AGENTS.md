@@ -102,3 +102,11 @@ is rolled back instead of leaving a caller suspended forever.
 
 ## Testing
 `test/run.sh` runs `test/smoke/runtime.lua` against a standalone `lua` interpreter (not a running FiveM client), following `kora_lib/test/harness.lua`'s own pattern: it stubs every native the resolver touches, loads `config.lua`/`client/state.lua`/`client/loop.lua` with `Config.target.testMode = true` (which makes `client/loop.lua` expose its private resolver functions on `Target._testRuntime` -- see the bottom of that file), and exercises registration-revision cache invalidation, `canInteract` caching, aim-point zone matching, the entity-focused raycast fallback, stale-entity guarding, the zone broad phase (grid rejection, rotated-box bounds, the reach filter, unbounded custom zones, compat-supplied bounds), the sprite counter, and `aimIsStatic`'s reuse window. It does not drive the `+target`/`-target` commands end to end, since those need a real (or coroutine-faithful) `CreateThread`/`Wait` scheduler that the harness's no-op stubs don't provide. Manual in-game verification is still how the Alt-release/NUI wiring gets exercised.
+
+## Documentation
+
+User-facing documentation lives in `docs/` (Markdown, published via the Kora Docusaurus site, kora_docs_next). Read `docs/index.md` first for an overview of features, configuration, commands, exports, events and database usage.
+
+When you add, change, or remove a feature, config option, command, export, event, item, permission, or database table/column, update the matching page in `docs/` in the same change. Keep docs accurate to the code; do not document behaviour that does not exist.
+
+Docs rules: plain Markdown with `title`/`sidebar_position` front matter (no `id`/`slug`), relative links only between docs pages, assets inside `docs/`, fenced code blocks with a language, and no raw `<`, `>`, `{`, `}` outside code (pages are parsed as MDX). The release version comes from `fxmanifest.lua`'s `version` field.
