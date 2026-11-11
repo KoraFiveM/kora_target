@@ -101,11 +101,23 @@ function actions.probe()
         if result == 1 then Wait(0) end
     end
     local p = GetEntityCoords(ped)
+    -- Every gate that makes `start` refuse (see client/loop.lua startTargeting),
+    -- so a refusal can be attributed without reading the resolver.
+    local gates = {
+        enabled = Target.enabled == true,
+        focused = IsGameWindowFocused() == true,
+        pauseMenu = IsPauseMenuActive() == true,
+        inVehicle = IsPedInAnyVehicle(ped, false) == true,
+        locked = Target.interactionsLocked() == true,
+        downed = Target.isDowned(true) == true,
+        busy = Target.isBusy(true) == true,
+    }
     return {
         ped = { x = p.x, y = p.y, z = p.z }, cam = { x = cam.x, y = cam.y, z = cam.z },
         rot = { x = rot.x, z = rot.z }, hit = hit == 1,
         hitCoords = hit == 1 and { x = coords.x, y = coords.y, z = coords.z } or nil,
         entity = entity ~= 0 and entity or nil, active = Target.active, hovering = hovering(),
+        gates = gates,
     }
 end
 
