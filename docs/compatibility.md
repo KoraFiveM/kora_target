@@ -181,4 +181,4 @@ ensure [compat]/ox_target
 ensure ox_inventory
 ```
 
-Copy `stubs/ox_target` to `resources/[compat]/ox_target` before you ensure it. Never run it alongside the real ox_target, and do not add scripts to it. After restarting kora_target, restart the placeholder and its dependents too. See [stubs/ox_target/README.md](https://github.com/KoraFiveM/kora_target/blob/main/stubs/ox_target/README.md).
+Copy `stubs/ox_target` to `resources/[compat]/ox_target` before you ensure it. Never run it alongside the real ox_target, and do not add scripts to it. After restarting kora_target, restart the placeholder and its dependents too. See [stubs/ox_target/README.md](https://github.com/KoraFiveM/kora_target/blob/dev/stubs/ox_target/README.md).
