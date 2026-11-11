@@ -4,7 +4,7 @@ lua54 'yes'
 
 name 'kora_target'
 author 'Jamie'
-version '1.0.0'
+version '0.1.0'
 description 'World/zone/model targeting engine built on kora_lib'
 
 dependencies {
