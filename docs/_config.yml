@@ -1,0 +1,4 @@
+theme: jekyll-theme-cayman
+title: kora_target
+description: "Crosshair and zone-based targeting/interaction engine for FiveM, built on kora_lib, with drop-in qb-target and ox_target compatibility."
+show_downloads: false
