@@ -1,0 +1,52 @@
+{
+  "resource": "kora_target",
+  "standardsRevision": "2026-11-12.1",
+  "realms": {
+    "client": [
+      "client/compat/ox-target.lua",
+      "client/compat/qb-target.lua",
+      "client/exports.lua",
+      "client/loop.lua",
+      "client/sprites.lua",
+      "client/state.lua",
+      "fft_hooks.lua"
+    ],
+    "server": [
+      "server/server.lua"
+    ],
+    "shared": [
+      "config.lua"
+    ],
+    "manifest": [
+      "fxmanifest.lua",
+      "stubs/ox_target/fxmanifest.lua"
+    ],
+    "test": [
+      "test/smoke/ox_compat.lua",
+      "test/smoke/ox_target_stub.lua",
+      "test/smoke/qb_compat.lua",
+      "test/smoke/runtime.lua"
+    ]
+  },
+  "exclude": [
+    ".git/*",
+    ".github/*",
+    ".standards/*",
+    "node_modules/*",
+    "**/node_modules/*",
+    "vendor/*",
+    "**/vendor/*",
+    "web/*",
+    "ui/*",
+    "html/*",
+    "dist/*",
+    "artifacts/*",
+    "runtime/*",
+    "txData/*",
+    "storage/*",
+    "stream/*",
+    "docs/*",
+    "__pycache__/*",
+    "modules/lookup/data/*"
+  ]
+}
