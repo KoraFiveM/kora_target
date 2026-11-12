@@ -1,6 +1,6 @@
 ---
 title: Configuration
-sidebar_position: 3
+sidebar_position: 7
 ---
 
 # Configuration
@@ -32,7 +32,7 @@ Changing them needs a resource restart. Registrations do not survive that restar
 | `defaultOptionDistance` | number | `2.5` | Fallback interact distance in metres when neither the option nor the registration sets one. Range 0.1 to 25.0. Live. |
 | `legacyMaxDistance` | number | `7.0` | Default distance for registrations made through the qb-target compatibility exports when they pass no `distance`. |
 | `boneTolerance` | number | `0.35` | How close (metres) the hit point must be to a bone for a bone-scoped option to match. |
-| `serverActionMaxDistance` | number | `5.0` | Cap and default for `registerServerAction` distance checks. See [Exports](./exports.md#server-actions). |
+| `serverActionMaxDistance` | number | `5.0` | Cap and default for `registerServerAction` distance checks. See [Native API](./api/target-api.md#server-action-flow). |
 | `rangeTolerance` | number | `0.5` | Metres added to an option's distance before an open menu closes as out of range, or before a selected option is refused. |
 
 ## Gameplay gates

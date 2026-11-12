@@ -1,6 +1,6 @@
 ---
 title: Option format
-sidebar_position: 6
+sidebar_position: 8
 ---
 
 # Option format
@@ -37,7 +37,7 @@ Functions passed through an export boundary arrive as callable tables. kora_targ
 
 ## Fields the native API does not interpret
 
-The native API accepts `item`, `job`, `gang` and `groups` on an option, but never checks them. A native caller that needs job, gang or item checks must do them in its own `canInteract`. The qb-target and ox_target compatibility exports do enforce their own filter fields. See [Compatibility](./compatibility.md).
+The native API accepts `item`, `job`, `gang` and `groups` on an option, but never checks them. A native caller that needs job, gang or item checks must do them in its own `canInteract`. The qb-target and ox_target compatibility exports do enforce their own filter fields. See [Compatibility](./api/compatibility.md).
 
 ## Zone-level fields
 
