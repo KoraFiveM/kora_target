@@ -1,6 +1,6 @@
 {
   "resource": "kora_target",
-  "standardsRevision": "2026-11-12.1",
+  "standardsRevision": "2026-11-12.2",
   "realms": {
     "client": [
       "client/compat/ox-target.lua",
@@ -48,5 +48,7 @@
     "docs/*",
     "__pycache__/*",
     "modules/lookup/data/*"
-  ]
+  ],
+  "project": "Kora Framework",
+  "copyright": "Copyright © 2026 Kora Framework"
 }
