@@ -1,11 +1,11 @@
 ---
 title: Events
-sidebar_position: 8
+sidebar_position: 9
 ---
 
 # Events
 
-kora_target has no public events of its own for other resources to trigger. Use the [exports](./exports.md) instead. This page lists what the resource listens to, what it sends, and the state it reads, so you can integrate with it.
+kora_target has no public events of its own for other resources to trigger. Use the [native API](./api/target-api.md) instead. This page lists what the resource listens to, what it sends, and the state it reads, so you can integrate with it.
 
 ## Callbacks
 
@@ -36,7 +36,7 @@ Option handlers registered through the compatibility layers fire whatever events
   - `event`: `TriggerEvent(event, response)`
   - `serverEvent`: `TriggerServerEvent(serverEvent, response)`
 
-See [Compatibility](./compatibility.md) for the payload shapes. Native options call `onSelect` directly and fire no events.
+See [Compatibility](./api/compatibility.md) for the payload shapes. Native options call `onSelect` directly and fire no events.
 
 Development-only: when `fft_kora_hooks` is enabled and an FFT session is active, a local client event `fft:kora:target` is fired with `{ label, model, coords }` for each option that runs.
 

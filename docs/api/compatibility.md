@@ -1,32 +1,173 @@
 ---
-title: Compatibility
-sidebar_position: 7
+title: "Compatibility"
+sidebar_position: 3
 ---
 
-# qb-target and ox_target compatibility
+
+# Compatibility
+
+Scripts written for ox_target or qb-target keep working without edits. Each export below is registered under its original name and converted onto the native kora_target engine. Open a group to see what every call becomes.
+
+Namespace: `exports.ox_target · exports['qb-target']` · Source: `client/compat/ox-target.lua, client/compat/qb-target.lua`
+
+## ox_target (`exports.ox_target:`)
+
+### Entities and models
+
+| Legacy call | Becomes |
+| --- | --- |
+| `addLocalEntity(entities, options)` | ``addEntity` on local entity handles` |
+| `addEntity(netIds, options)` | ``addEntity`, each network id resolved to its entity first` |
+| `addModel(models, options)` | ``addModel`` |
+
+### Global types
+
+| Legacy call | Becomes |
+| --- | --- |
+| `addGlobalPlayer(options)` | ``addGlobalType('player')`` |
+| `addGlobalPed(options)` | ``addGlobalType('ped')`` |
+| `addGlobalVehicle(options)` | ``addGlobalType('vehicle')`` |
+| `addGlobalObject(options)` | ``addGlobalType('object')`` |
+| `addGlobalOption(options)` | `All four global types in one call; returns a group id` |
+
+### Zones
+
+| Legacy call | Becomes |
+| --- | --- |
+| `addBoxZone(zoneOpts)` | ``addBoxZone`; a `name` can later be passed to `removeZone`` |
+| `addSphereZone(zoneOpts)` | ``addSphereZone`; named zones supported` |
+| `addPolyZone(zoneOpts)` | ``addPolyZone`; `minZ` / `maxZ` are not forwarded` |
+
+### Removal
+
+| Legacy call | Becomes |
+| --- | --- |
+| `removeLocalEntity(entities, names?)` | ``removeEntity`, or only the named options` |
+| `removeEntity(netIds)` | ``removeEntity` after resolving the network ids` |
+| `removeModel(models, names?)` | ``removeModel`, or only the named options` |
+| `removeGlobalPlayer(names)` | ``removeGlobalType('player')`, or only the named options` |
+| `removeGlobalPed(names)` | ``removeGlobalType('ped')`, or only the named options` |
+| `removeGlobalVehicle(names)` | ``removeGlobalType('vehicle')`, or only the named options` |
+| `removeGlobalObject(names)` | ``removeGlobalType('object')`, or only the named options` |
+| `removeGlobalOption(groupId)` | `Removes the group from all four global types, or only the named options` |
+| `removeZone(id)` | ``removeZone`; accepts the zone id or its name` |
+
+### Targeting state
+
+| Legacy call | Becomes |
+| --- | --- |
+| `disableTargeting(state)` | ``setEnabled(not state)`` |
+| `getState()` | ``getState`; returns kora_target's own state table` |
+| `isActive()` | `Whether a targeting session is running (`getState().active`)` |
+
+## qb-target (`exports['qb-target']:`)
+
+### Zones
+
+| Legacy call | Becomes |
+| --- | --- |
+| `AddBoxZone(name, coords, length, width, boxOpts, targetOptions)` | `Name-keyed box: native box with `minZ` / `maxZ`, otherwise a 2D footprint` |
+| `AddCircleZone(name, coords, radius, boxOpts, targetOptions)` | `Name-keyed circle: native sphere with `useZ`, otherwise a vertical cylinder` |
+| `AddPolyZone(name, points, boxOpts, targetOptions)` | `Name-keyed polygon, `minZ` / `maxZ` optional` |
+| `AddComboZone(zones, options, targetOptions)` | `One zone per sub-zone, all sharing the same options` |
+| `AddEntityZone(name, entity, boxOpts, targetOptions)` | `Box that follows the entity, sized from its model` |
+| `RemoveZone(name)` | `Destroys the zone by name, including every sub-zone of a combo zone` |
+| `GetZoneData(name)` | `Returns the zone object` |
+| `UpdateZoneData(name, data)` | `Replaces the zone's options and distance` |
+
+### Targets
+
+| Legacy call | Becomes |
+| --- | --- |
+| `AddTargetEntity(entity, targetOptions)` | ``addEntity`; options merge by label` |
+| `AddTargetModel(models, targetOptions)` | ``addModel`; options merge by label` |
+| `AddTargetBone(bones, targetOptions)` | ``addGlobalBone`` |
+| `AddGlobalType(entityType, targetOptions)` | ``addGlobalType`; accepts 1 / 2 / 3 or ped / vehicle / object` |
+| `AddGlobalPed(targetOptions)` | ``addGlobalType('ped')`` |
+| `AddGlobalVehicle(targetOptions)` | ``addGlobalType('vehicle')`` |
+| `AddGlobalObject(targetOptions)` | ``addGlobalType('object')`` |
+| `AddGlobalPlayer(targetOptions)` | ``addGlobalType('player')`` |
+
+### Removal by label
+
+| Legacy call | Becomes |
+| --- | --- |
+| `RemoveTargetEntity(entities, labels?)` | `Removes the labelled options, or the whole entity entry` |
+| `RemoveTargetModel(models, labels?)` | `Removes the labelled options, or the whole model entry` |
+| `RemoveTargetBone(bones, labels?)` | `Removes the labelled options, or the whole bone entry` |
+| `RemoveGlobalType(entityType, labels?)` | `Removes the labelled options, or the whole type entry` |
+| `RemoveGlobalPed(labels?)` | `Same as `RemoveGlobalType` for ped` |
+| `RemoveGlobalVehicle(labels?)` | `Same as `RemoveGlobalType` for vehicle` |
+| `RemoveGlobalObject(labels?)` | `Same as `RemoveGlobalType` for object` |
+| `RemoveGlobalPlayer(labels?)` | `Same as `RemoveGlobalType` for player` |
+
+### Read stored options
+
+| Legacy call | Becomes |
+| --- | --- |
+| `GetTargetEntityData(entity, label)` | `Returns the stored legacy option for that label` |
+| `GetTargetModelData(model, label)` | `Returns the stored legacy option for that label` |
+| `GetTargetBoneData(bone, label)` | `Returns the stored legacy option for that label` |
+| `GetGlobalTypeData(entityType, label)` | `Returns the stored legacy option for that label` |
+| `GetGlobalPedData(label)` | `Same as `GetGlobalTypeData` for ped` |
+| `GetGlobalVehicleData(label)` | `Same as `GetGlobalTypeData` for vehicle` |
+| `GetGlobalObjectData(label)` | `Same as `GetGlobalTypeData` for object` |
+| `GetGlobalPlayerData(label)` | `Same as `GetGlobalTypeData` for player` |
+
+### Update stored options
+
+| Legacy call | Becomes |
+| --- | --- |
+| `UpdateTargetEntityData(entity, label, data)` | `Replaces or adds the option and refreshes the live registration` |
+| `UpdateTargetModelData(model, label, data)` | `Replaces or adds the option and refreshes the live registration` |
+| `UpdateTargetBoneData(bone, label, data)` | `Replaces or adds the option and refreshes the live registration` |
+| `UpdateGlobalTypeData(entityType, label, data)` | `Replaces or adds the option and refreshes the live registration` |
+| `UpdateGlobalPedData(label, data)` | `Same as `UpdateGlobalTypeData` for ped` |
+| `UpdateGlobalVehicleData(label, data)` | `Same as `UpdateGlobalTypeData` for vehicle` |
+| `UpdateGlobalObjectData(label, data)` | `Same as `UpdateGlobalTypeData` for object` |
+| `UpdateGlobalPlayerData(label, data)` | `Same as `UpdateGlobalTypeData` for player` |
+
+### Ped spawning
+
+| Legacy call | Becomes |
+| --- | --- |
+| `SpawnPed(data)` | `Spawns local peds (on player load, or at once with `spawnNow`) and registers their target` |
+| `RemoveSpawnedPed(peds)` | `Deletes the spawned peds and their targets` |
+| `DeletePeds()` | `Deletes every ped spawned through `SpawnPed`` |
+| `GetPeds()` | `Returns the registered ped configs` |
+| `UpdatePedsData(index, data)` | `Overwrites the stored ped config at that index` |
+
+### Targeting state and helpers
+
+| Legacy call | Becomes |
+| --- | --- |
+| `AllowTargeting(state)` | ``setEnabled(state)`; also cancels the current session when false` |
+| `DisableTarget(state)` | `Cancels the current session without changing the gate` |
+| `IsTargetActive()` | `Whether a targeting session is running` |
+| `IsTargetSuccess()` | `Whether at least one option is currently available` |
+| `RaycastCamera(flag?, playerCoords?)` | `Camera raycast returning coords, distance, entity and entity type` |
+| `CheckEntity(flag, datatable, entity, distance)` | `True when `datatable` is a non-empty table` |
+| `CheckBones(coords, entity, bones)` | `Closest registered bone to the point` |
+| `EnableNUI(options)` | `Grants legacy NUI focus and sends the `validTarget` message` |
+| `DisableNUI()` | `Releases legacy NUI focus` |
+| `LeftTarget()` | `Drops legacy NUI focus and clears the hover state` |
+| `DrawOutlineEntity(entity, enabled)` | `Entity outline; needs `Config.target.legacyOutline.enabled`, never outlines peds` |
+
+## Related guides
+
+- [Native API](./target-api.md)
+
+## Behaviour details from the code
 
 kora_target registers the public qb-target and ox_target client exports under those resource names, using kora_lib's `Kora.compat.provideExport`. Scripts that call `exports['qb-target']:...` or `exports.ox_target:...` therefore run against kora_target without changes. Both layers translate their calls into the native engine, so all three APIs share the same resolver, prompt, menu, gates and recovery.
 
 - The manifest declares `provide 'qb-target'`, which satisfies `dependency 'qb-target'` in other resources.
-- `ox_target` is **not** provided. `exports.ox_target:*` works without anything else. Resources that declare `dependency 'ox_target'` or check `GetResourceState('ox_target')` need the [placeholder resource](#the-ox_target-placeholder).
+- `ox_target` is **not** provided. `exports.ox_target:*` works without anything else. Resources that declare `dependency 'ox_target'` or check `GetResourceState('ox_target')` need the [placeholder resource](#placeholder-resource).
 - Native-only option fields such as `allowInVehicle` are not read by either compatibility layer.
 
-## qb-target
+### qb-target
 
-### Exports
-
-| Group | Exports |
-| --- | --- |
-| Zones | `AddBoxZone(name, coords, length, width, boxOpts, targetOptions)`, `AddCircleZone(name, coords, radius, boxOpts, targetOptions)`, `AddPolyZone(name, points, boxOpts, targetOptions)`, `AddComboZone(zones, options, targetOptions)`, `AddEntityZone(name, entity, boxOpts, targetOptions)`, `RemoveZone(name)`, `GetZoneData(name)`, `UpdateZoneData(name, data)` |
-| Entities and models | `AddTargetEntity(entity, targetOptions)`, `AddTargetModel(models, targetOptions)`, `RemoveTargetEntity(entities, labels)`, `RemoveTargetModel(models, labels)`, `GetTargetEntityData(entity, label)`, `GetTargetModelData(model, label)`, `UpdateTargetEntityData(entity, label, data)`, `UpdateTargetModelData(model, label, data)` |
-| Bones | `AddTargetBone(bones, targetOptions)`, `RemoveTargetBone(bones, labels)`, `GetTargetBoneData(bone, label)`, `UpdateTargetBoneData(bone, label, data)` |
-| Global types | `AddGlobalType(type, targetOptions)`, `AddGlobalPed`, `AddGlobalVehicle`, `AddGlobalObject`, `AddGlobalPlayer` (each `(targetOptions)`), `RemoveGlobalType(type, labels)`, `RemoveGlobalPed`, `RemoveGlobalVehicle`, `RemoveGlobalObject`, `RemoveGlobalPlayer` (each `(labels)`), `GetGlobalTypeData(type, label)`, `GetGlobalPedData`, `GetGlobalVehicleData`, `GetGlobalObjectData`, `GetGlobalPlayerData` (each `(label)`), `UpdateGlobalTypeData(type, label, data)`, `UpdateGlobalPedData`, `UpdateGlobalVehicleData`, `UpdateGlobalObjectData`, `UpdateGlobalPlayerData` (each `(label, data)`) |
-| Peds | `SpawnPed(data)`, `RemoveSpawnedPed(peds)`, `DeletePeds()`, `GetPeds()`, `UpdatePedsData(index, data)` |
-| State and helpers | `AllowTargeting(state)`, `DisableTarget(state)`, `IsTargetActive()`, `IsTargetSuccess()`, `RaycastCamera(flag, playerCoords)`, `EnableNUI(options)`, `DisableNUI()`, `LeftTarget()`, `DrawOutlineEntity(entity, enabled)`, `CheckEntity(flag, datatable, entity, distance)`, `CheckBones(coords, entity, bones)` |
-
-`AddGlobalType` and the related type exports accept `1`, `2`, `3`, `'ped'`, `'vehicle'` or `'object'`.
-
-### targetOptions and option fields
+#### targetOptions and option fields
 
 `targetOptions` is `{ options = { ... }, distance = number }`.
 
@@ -51,7 +192,7 @@ kora_target registers the public qb-target and ox_target client exports under th
 
 The filters read player data from kora_core (`exports.kora_core:toLegacyPlayerData(exports.kora_core:getPlayerData())`). The data is refreshed on `QBCore:Client:OnPlayerLoaded` and updated on `QBCore:Client:OnPlayerUpdated`. All filters must pass before the option's own `canInteract` runs. If kora_core is not available when an option with a filter is registered, a warning is printed and the filters are skipped, so the option is shown to everyone unless its own `canInteract` hides it.
 
-### Zones
+#### Zones
 
 `boxOpts` fields:
 
@@ -80,7 +221,7 @@ Zone calls return a zone object that contains these fields:
 
 When PolyZone's `BoxZone`, `CircleZone`, `PolyZone`, `ComboZone` or `EntityZone` classes exist as globals in kora_target's own Lua environment, the real PolyZone objects are created and returned instead. kora_target's manifest does not load PolyZone, so the standalone kora_lib-backed path above is what normally runs. PolyZone is not required.
 
-### State helpers
+#### State helpers
 
 - `AllowTargeting(false)` disables targeting persistently (the same as `setEnabled(false)`). `AllowTargeting(true)` enables it again.
 - `DisableTarget(true)` cancels the current session only. The next key press starts a new session.
@@ -91,7 +232,7 @@ When PolyZone's `BoxZone`, `CircleZone`, `PolyZone`, `ComboZone` or `EntityZone`
 - `CheckEntity` returns true when `datatable` is a non-empty table.
 - `CheckBones(coords, entity, bones)` returns the closest registered bone's `index, position, name`, or `false`.
 
-### SpawnPed
+#### SpawnPed
 
 `SpawnPed(data)` accepts one ped config or an array of configs. Each config has these fields:
 
@@ -114,31 +255,9 @@ Spawning rules:
 - Models and animation dictionaries load through kora_lib's bounded `Kora.stream` helpers. A failure raises an error and rolls back the partly created ped.
 - A ped and its target registration are removed when the resource that spawned it stops.
 
-## ox_target
+### ox_target
 
-### Exports
-
-| Export | Notes |
-| --- | --- |
-| `addLocalEntity(entities, options)` | Local entity handles. |
-| `addEntity(netIds, options)` | Network ids. Options apply when the entity streams in, and survive re-streaming. |
-| `addModel(models, options)` | |
-| `addGlobalPed`, `addGlobalVehicle`, `addGlobalObject`, `addGlobalPlayer` | `(options)` |
-| `addGlobalOption(options)` | Registers on peds, vehicles, objects and players. Returns a group id. |
-| `addBoxZone(data)` | `coords`, `size` (default `vec3(2, 2, 2)`), `rotation`, `name`, `debug`, `drawSprite`, `options`. Returns the zone id. |
-| `addSphereZone(data)` | `coords`, `radius`, `name`, `debug`, `drawSprite`, `options`. |
-| `addPolyZone(data)` | `points` (vec3), `thickness`, `name`, `debug`, `drawSprite`, `options`. |
-| `removeZone(idOrName)` | By id or by `name`. |
-| `removeLocalEntity(entities, names)` | Without `names`, removes every registration on the entities. With a name or array of names, removes only those options from ox_target registrations. |
-| `removeEntity(netIds)` | Removes registrations indexed under the network ids. |
-| `removeModel(models, names)` | Same `names` rule as `removeLocalEntity`. |
-| `removeGlobalPed`, `removeGlobalVehicle`, `removeGlobalObject`, `removeGlobalPlayer` | `(names)`. Removes the named options from ox_target global registrations. |
-| `removeGlobalOption(groupIdOrNames)` | A group id from `addGlobalOption`, or option names. |
-| `disableTargeting(state)` | `true` disables targeting, `false` enables it. |
-| `getState()` | Returns the native `getState()` table, not ox_target's shape. |
-| `isActive()` | True for the whole targeting session. |
-
-### Option fields
+#### Option fields
 
 `options` may be an array or a single option table. Supported fields:
 
@@ -167,11 +286,11 @@ On selection, the first available handler runs:
 
 `response` is the option without `icon`, `groups`, `items`, `canInteract`, `onSelect`, `export`, `event`, `serverEvent` and `command`. It adds `entity`, `coords`, `distance` and `zone`.
 
-### Sub-menus
+#### Sub-menus
 
 An option with `openMenu = 'menuName'` switches the current menu before its handler runs. After that, only options with a matching `menuName` are shown, plus a **Go back** entry (`builtin:goback`, label from `Config.target.text.goBack`). The entry is added to every global type, and to zones that use menus. `openMenu = 'home'` returns to the top level. The chosen menu persists across key presses until go-back or home is chosen, or until `kora_target:oxMenuTimeoutMs` (default 15000 ms, `0` = never) passes.
 
-## The ox_target placeholder
+### Placeholder resource
 
 `stubs/ox_target` is a manifest-only resource named `ox_target` that contains no scripts or exports. Its only purpose is to make `GetResourceState('ox_target')` return `started` (for example for ox_inventory with `setr inventory:target true`). It also satisfies `dependency 'ox_target'`. Calls to `exports.ox_target:*` are still answered by kora_target.
 

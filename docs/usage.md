@@ -1,6 +1,6 @@
 ---
 title: Player usage
-sidebar_position: 2
+sidebar_position: 6
 ---
 
 # Player usage
@@ -57,7 +57,7 @@ Before an option runs, kora_target checks it again. The option is refused if any
 | Cuffed or in a progress bar | `blockWhileBusy = true` | Blocked when `LocalPlayer.state.koraCuffed` is true or a kora_lib progress bar is active. |
 | UI-block state bag set | `uiBlockBag = 'koraUiBlocked'` | Blocked while `LocalPlayer.state[uiBlockBag]` is true. This check applies even when `blockWhileBusy` is false. Set `uiBlockBag` to `false` or `''` to disable it. |
 | kora_multichar mode | none | Blocked while `LocalPlayer.state['kora_multichar:mode']` is set to anything other than `nil`/`false` (character select, spawn picker, scene editor). |
-| Disabled by script | `setEnabled(false)` | Blocked until it is enabled again. See [Exports](./exports.md#setenabled). |
+| Disabled by script | `setEnabled(false)` | Blocked until it is enabled again. See [Native API](./api/target-api.md). |
 
 When one of these starts during a session, the prompt and any open menu close.
 
