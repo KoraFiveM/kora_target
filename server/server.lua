@@ -26,7 +26,7 @@ Kora.callback.register('kora_target:server:runAction', function(src, name, netId
     local ok = results[1]
 
     if not ok then
-        print(('[kora_target] server action \'%s\' errored: %s'):format(name, tostring(results[2])))
+        Kora.logging.error('action.handler_errored', 'A server action handler errored', { action = name, error = tostring(results[2]) })
         return false, 'Server action errored.'
     end
 
@@ -50,9 +50,7 @@ function ServerTarget.registerServerAction(name, handler, opts)
         'registerServerAction maxDistance must be within the configured server cap.')
 
     if serverActions[name] then
-        print(('[kora_target] WARNING: server action \'%s\' is already registered -- overwriting the previous '
-            .. 'handler. Two resources (or a restarted resource) are registering the same action name.')
-            :format(name))
+        Kora.logging.warn('action.already_registered', 'Server action is already registered; overwriting the previous handler. Two resources (or a restarted resource) are registering the same action name.', { action = name })
     end
 
     serverActions[name] = {

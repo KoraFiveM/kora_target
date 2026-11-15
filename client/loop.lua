@@ -503,7 +503,7 @@ local function optionAllowed(registration, optionIndex, option, entity, distance
     if Config.target.diagnostics then diagnostics.canInteract = diagnostics.canInteract + 1 end
     local ok, result = pcall(option.canInteract, entity, distance, option.data, anchorCoords)
     local allowed = ok and result ~= false
-    if not ok then print(("[kora_target] canInteract for option '%s' errored: %s"):format(option.label, tostring(result))) end
+    if not ok then Kora.logging.error('option.can_interact_errored', 'canInteract for an option errored', { option = tostring(option.label), error = tostring(result) }) end
 
     local cacheMs = allowed and successCacheMs or failureCacheMs
     if cacheMs > 0 then
@@ -699,8 +699,10 @@ end
 local function reportDiagnostics(now)
     if not Config.target.diagnostics or now - diagnostics.lastReport < Config.target.diagnosticsInterval then return end
     local scans = math.max(diagnostics.scans, 1)
-    print(('[kora_target] %d scans (%d ticks skipped as static), %d raycasts, %d options, %d canInteract calls, %.2fms average resolve')
-        :format(diagnostics.scans, diagnostics.skipped, diagnostics.raycasts, diagnostics.options, diagnostics.canInteract, diagnostics.elapsed / scans))
+    Kora.logging.info('diagnostics.resolver_report', 'Resolver diagnostics for the last interval', {
+        scans = diagnostics.scans, skippedStatic = diagnostics.skipped, raycasts = diagnostics.raycasts,
+        options = diagnostics.options, canInteractCalls = diagnostics.canInteract, avgResolveMs = diagnostics.elapsed / scans,
+    })
     diagnostics = { scans = 0, skipped = 0, raycasts = 0, options = 0, canInteract = 0, elapsed = 0, lastReport = now }
 end
 
@@ -800,7 +802,7 @@ local function runOption(candidate)
     else
         ok, err = pcall(candidate.option.onSelect, candidate.entity, candidate.option.data)
     end
-    if not ok then print(("[kora_target] onSelect for option '%s' errored: %s"):format(candidate.option.label, tostring(err))) end
+    if not ok then Kora.logging.error('option.on_select_errored', 'onSelect for an option errored', { option = tostring(candidate.option.label), error = tostring(err) }) end
 end
 
 ---Resolves the candidates captured at Alt release. One option is immediate;
@@ -1199,13 +1201,13 @@ RegisterCommand('kora_target_debug', function(_, args)
     elseif arg == nil then
         enabled = not Target.debugEnabled
     else
-        print(("[kora_target] kora_target_debug: unrecognised argument '%s' -- use 'on', 'off', or no argument to toggle."):format(arg))
+        Kora.logging.warn('debug.unrecognised_argument', "kora_target_debug got an unrecognised argument; use 'on', 'off', or no argument to toggle", { argument = tostring(arg) })
         return
     end
 
     Target.debugEnabled = enabled
     Kora.zones.setDebug(nil, enabled)
-    print(("[kora_target] target zone debug drawing %s."):format(enabled and 'enabled' or 'disabled'))
+    Kora.logging.info('debug.zone_drawing_toggled', 'Target zone debug drawing toggled', { enabled = enabled })
 end, false)
 
 AddEventHandler('onClientResourceStop', function(resource)
@@ -1254,9 +1256,9 @@ end
 
 if Config.target.demo then
     Target.addGlobalType('ped', {{ label = 'Inspect ped (demo)', icon = 'eye', onSelect = function(entity)
-        print(('[kora_target] demo: inspected ped %s (model %s)'):format(tostring(entity), tostring(GetEntityModel(entity))))
+        Kora.logging.debug('demo.ped_inspected', 'Demo: inspected ped', { entity = entity, model = GetEntityModel(entity) })
     end }}, 3.0)
     Target.addGlobalType('vehicle', {{ label = 'Inspect vehicle (demo)', icon = 'car', onSelect = function(entity)
-        print(('[kora_target] demo: inspected vehicle %s'):format(tostring(entity)))
+        Kora.logging.debug('demo.vehicle_inspected', 'Demo: inspected vehicle', { entity = entity })
     end }}, 3.0)
 end

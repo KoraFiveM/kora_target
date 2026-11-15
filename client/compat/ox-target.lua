@@ -128,8 +128,9 @@ local function dispatchLegacy(option, entity, context, invoker)
             exports[resource][option.export](nil, responseFor(entity, context, false, option))
         end)
         if not ok then
-            print(('[kora_target:ox_target] export %s.%s for option %q failed: %s')
-                :format(tostring(resource), tostring(option.export), tostring(option.label), tostring(err)))
+            Kora.logging.error('compat.ox_export_failed', 'Export for an option failed', {
+                targetResource = tostring(resource), export = tostring(option.export), option = tostring(option.label), error = tostring(err),
+            })
         end
     elseif option.event then
         TriggerEvent(option.event, responseFor(entity, context, false, option))
@@ -219,8 +220,7 @@ local function hasItems(filter, hasAny)
         local result = playerHas(name, amount)
         if result == nil and not inventoryWarned then
             inventoryWarned = true
-            print('[kora_target:ox_target] WARNING: option sets items but kora_inventory is unavailable '
-                .. '-- item requirements cannot be checked and will not deny.')
+            Kora.logging.warn('compat.ox_inventory_unavailable', 'Option sets items but kora_inventory is unavailable; item requirements cannot be checked and will not deny')
         end
         return result
     end
@@ -287,9 +287,7 @@ local function makeCanInteract(option, isZone)
     if enforce then
         local available = Target._playerData and (Target._playerData())
         if not available then
-            print(('[kora_target:ox_target] WARNING: option %q sets groups but no kora_core identity is running '
-                .. '-- groups cannot be checked and the option will be shown to everyone.')
-                :format(tostring(option.label)))
+            Kora.logging.warn('compat.ox_groups_without_core', 'Option sets groups but no kora_core identity is running; groups cannot be checked and the option will be shown to everyone', { option = tostring(option.label) })
         end
     end
 

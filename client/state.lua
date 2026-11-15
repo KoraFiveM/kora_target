@@ -543,7 +543,7 @@ local function mayRemove(id, kind)
     if not caller or caller == GetCurrentResourceName() then return true end
     local ok, owner = pcall(Target.ownership.owner, id)
     if not ok or owner == nil or owner == caller then return true end
-    print(("[kora_target] %s tried to remove registration %s owned by %s; ignored"):format(caller, tostring(id), tostring(owner)))
+    Kora.logging.warn('registry.remove_refused', 'A resource tried to remove a registration owned by another resource; ignored', { caller = tostring(caller), registrationId = tostring(id), owner = tostring(owner) })
     return false
 end
 Target._mayRemove = mayRemove
@@ -584,7 +584,7 @@ function Target.addEntity(entity, options, defaultDistance)
     assert(#entities > 0, "addEntity requires at least one entity handle.")
     for _, e in ipairs(entities) do
         if type(e) ~= "number" and Config.target.skipInvalidEntities then
-            print(("[kora_target] addEntity skipped: invalid entity handle (%s) from %s"):format(tostring(e), GetInvokingResource() or "unknown"))
+            Kora.logging.warn('registry.add_entity_skipped', 'addEntity skipped an invalid entity handle', { handle = tostring(e), invoker = GetInvokingResource() or "unknown" })
             return nil
         end
         assert(type(e) == "number", "Entity handles must be numbers.")

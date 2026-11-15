@@ -128,9 +128,7 @@ local function makeCanInteract(option)
         or option.gang or option.excludegang or option.item or option.citizenid
 
     if hasFilter and not coreAvailable then
-        print(('[kora_target:qb-target] WARNING: option %q sets a job/gang/item/jobType filter but kora_core '
-            .. 'is not running -- the option will be shown to EVERYONE unless it supplies its '
-            .. 'own canInteract.'):format(tostring(option.label)))
+        Kora.logging.warn('compat.qb_filter_without_core', 'Option sets a job/gang/item/jobType filter but kora_core is not running; the option will be shown to everyone unless it supplies its own canInteract', { option = tostring(option.label) })
     end
 
     return function(entity, distance, data)
@@ -1012,7 +1010,7 @@ spawnPendingPeds = function()
         local data = spawnedPedConfigs[configIndex]
         local ok, err = pcall(spawnOnePed, data, spawnedPedOwners[configIndex], configIndex)
         if not ok then
-            print(('^3[kora_target]^7 pending SpawnPed config %d failed: %s'):format(configIndex, tostring(err)))
+            Kora.logging.error('compat.spawn_ped_failed', 'Pending SpawnPed config failed', { configIndex = configIndex, error = tostring(err) })
         end
     end
 end

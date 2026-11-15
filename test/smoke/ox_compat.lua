@@ -20,6 +20,7 @@ local exportsByEvent = {}
 
 
 _G.Kora = {
+    logging = { isEnabled = function() return true end, trace = function() end, debug = function() end, info = function() end, warn = function() end, error = function() end, fatal = function() end },
     resources = {},
     util = { isCallable = function(value)
         if type(value) == 'function' then return true end

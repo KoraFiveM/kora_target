@@ -52,6 +52,8 @@ Changes belong to this resource repository, separately from Docker setup and doc
 changes. Shared tooling is a local snapshot; do not introduce a dependency on the setup
 checkout. Keep resource-specific inventory and definitions when refreshing the snapshot.
 
+Diagnostics use Kora.logging, not print.
+
 ---
 
 Copyright © 2026 Kora Framework.
