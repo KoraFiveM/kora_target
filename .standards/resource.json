@@ -12,6 +12,7 @@
       "fft_hooks.lua"
     ],
     "server": [
+      "kora_versioncheck.lua",
       "server/server.lua"
     ],
     "shared": [
